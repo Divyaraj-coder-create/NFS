@@ -1,0 +1,12 @@
+// CLIENT
+clientPort = 10110
+namingServerPort = 10115
+
+
+// STORAGE SERVER
+storageServerPort = 10210   // # 10 series
+storageServerPort = 10220   // # 20 series
+storageServerPort = 10230   // # 30 series
+storageServerPort = 10240   // # 40 series
+storageServerPort = 10250   // # 50 series
+
