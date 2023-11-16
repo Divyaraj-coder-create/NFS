@@ -1,4 +1,8 @@
-neel_amrutia
+1003.323.11
+10202
+5567
+./home/desktop/neel_amrutia/osn.txt
+./home/desktop/neel_amrutia
 neel
 divaymohan
 siddharthchopra89
@@ -8,4 +12,6 @@ priyankachopra
 tam2cul
 sudeepdutt
 bhola_bhaiya
+/home/divyaraj/ansh
+/home/divyaraj/ansh/fuegbf
 exit
