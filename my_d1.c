@@ -12,9 +12,9 @@ int namingServerPort = 5565;
 
 void connection_to_storage_server_for_read_write(char *ip, int port, char *path, char *function)
 {
-    // printf("------%s-----\n", ip);
-    // printf("------%d-----\n", port);
-    // printf("------%s-----\n", path);
+    printf("------%s-----\n", ip);
+    printf("------%d-----\n", port);
+    printf("------%s-----\n", path);
     int sock;
     struct sockaddr_in addr;
     socklen_t addr_size;
@@ -26,6 +26,7 @@ void connection_to_storage_server_for_read_write(char *ip, int port, char *path,
         perror("[-]Socket error");
         exit(1);
     }
+
     memset(&addr, '\0', sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_port = 5569;
@@ -36,18 +37,17 @@ void connection_to_storage_server_for_read_write(char *ip, int port, char *path,
     while (1)
     {
         int n = recv(sock, buffer1, sizeof(buffer1), 0);
-        if (n == 0)
-        {
-            continue;
-        }
         buffer1[n] = '\0';
         printf("%s\n", buffer1);
         if (strcmp(buffer1, "Accepted") == 0)
         {
+            // printf("Accepted\n");
             break;
         }
     }
+
     send(sock, path, strlen(path), 0);
+    //  printf("path sent\n");
     usleep(1000);
     memset(buffer, '\0', sizeof(buffer));
     strcpy(buffer, function);
@@ -58,18 +58,13 @@ void connection_to_storage_server_for_read_write(char *ip, int port, char *path,
         while (1)
         {
             int n = recv(sock, buffer, sizeof(buffer), 0);
-            if (n == 0)
-            {
-                continue;
-            }
-            // usleep(1000);
             buffer[n] = '\0';
             if (strcmp(buffer, "STOP") == 0)
             {
                 printf("----DONE----\n");
                 break;
             }
-            printf("--%s--\n", buffer);
+            printf("%s\n", buffer);
             memset(buffer, '\0', sizeof(buffer));
         }
         close(sock);
@@ -80,75 +75,54 @@ void connection_to_storage_server_for_read_write(char *ip, int port, char *path,
         char choice[10];
         memset(choice, '\0', sizeof(choice));
         fgets(choice, 10, stdin);
-        choice[strlen(choice) - 1] = '\0';
         send(sock, choice, sizeof(choice), 0);
         int a = atoi(choice);
         if (a == 0)
         {
-            printf("Enter string to write: \n");
-            while (1)
-            {
-                char sTR[1024];
-                fgets(sTR, 1024, stdin);
-                sTR[strlen(sTR) - 1] = '\0';
-                send(sock, sTR, sizeof(sTR), 0);
-                if (strcmp(sTR, "STOP") == 0)
-                {
-                    break;
-                }
-            }
-            close(sock);
+        printf("Enter string to write: \n");
+        char sTR[1024];
+        fgets(sTR, 1024, stdin);
+        send(sock, sTR, sizeof(sTR), 0);
+        close(sock);
         }
         else if (a == 1)
         {
-
             printf("Enter string to append: \n");
-            while (1)
-            {
-                char sTR[1024];
-                fgets(sTR, 1024, stdin);
-                sTR[strlen(sTR) - 1] = '\0';
-                send(sock, sTR, sizeof(sTR), 0);
-                if (strcmp(sTR, "STOP") == 0)
-                {
-                    break;
-                }
-            }
+            char sTR[1024];
+            fgets(sTR, 1024, stdin);
+            send(sock, sTR, sizeof(sTR), 0);
             close(sock);
         }
     }
-    else if (strcmp(function, "DETAILS") == 0)
-    {
-        char strin1[1024];
-        int n1 = recv(sock, strin1, sizeof(strin1), 0);
-        strin1[n1] = '\0';
-        printf("SIZE --- %s\n", strin1);
-        while (1)
-        {
-            char strin2[1024];
-            int n2 = recv(sock, strin2, sizeof(strin2), 0);
-            if (n2 == 0)
-            {
-                continue;
-            }
-            strin2[n2] = '\0';
-            printf("PERMISSION --- %s\n", strin2);
-            break;
-        }
-        close(sock);
-    }
+
+    // char return_val[1024];
+    // memset(return_val, '\0', sizeof(return_val));
+    // while (1)
+    // {
+    //     int n = recv(sock, return_val, sizeof(return_val), 0);
+    //     return_val[n] = '\0';
+    //     // printf("%s\n", return_val);
+    //     if (strcmp(return_val, "Done") == 0)
+    //     {
+    //         printf("Done\n");
+    //         break;
+    //     }
+    // }
+
+    // printf("%s\n", buffer);
+    close(sock);
 }
 
 void handle_read_write(int sock, char *path, char *function)
 {
     char buffer[1024];
+    // memset(buffer, '\0', sizeof(buffer));
     char ip_for_stor[1024];
     int port_for_stor;
     int c = 2;
     while (c--)
     {
         int n = recv(sock, buffer, sizeof(buffer), 0);
-        buffer[n] = '\0';
         printf("%s\n", buffer);
         if (c == 1)
         {
@@ -162,16 +136,10 @@ void handle_read_write(int sock, char *path, char *function)
         }
         memset(buffer, '\0', sizeof(buffer));
     }
+    // close(sock);
+    // printf("------%s-----\n", ip_for_stor);
+    // printf("------%d-----\n", port_for_stor);
     connection_to_storage_server_for_read_write(ip_for_stor, port_for_stor, path, function);
-}
-
-void handle_create_delete(int sock, char *path, char *function)
-{
-    usleep(1000);
-    char function1[1024];
-    memset(function1, '\0', sizeof(function1));
-    strcpy(function1, function);
-    send(sock, function1, strlen(function1), 0);
 }
 
 int main()
@@ -181,18 +149,31 @@ int main()
     socklen_t addr_size;
     char buffer[1024];
     int n;
+
     sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0)
     {
         perror("[-]Socket error");
         exit(1);
     }
+
     memset(&addr, '\0', sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_port = namingServerPort;
     addr.sin_addr.s_addr = inet_addr(namingServerIP);
+
     connect(sock, (struct sockaddr *)&addr, sizeof(addr));
     printf("[+] Connected to the server.\n");
+
+    // send(sock, "Client Request To Connect", strlen("Client Request To Connect"), 0);
+    // memset(buffer, '\0', sizeof(buffer));
+    // recv(sock, buffer, 1024, 0);
+    //  if (strcmp(buffer, "Accepted") != 0)
+    //  {
+    //      printf("Server is experiencing exceptionally high demand. Please return after some time\n");
+    //      exit(1);
+    //  }
+
     printf("The Client must provide the path to the file/directory wherever applicable.\n");
     printf("------------ CLIENT INTERFACE ------------\n");
     while (1)
@@ -206,6 +187,7 @@ int main()
         printf("Enter your choice : ");
         fgets(choice, 10, stdin);
         send(sock, choice, strlen(choice), 0);
+        printf("choice ---- %d\n", atoi(choice));
         if (atoi(choice) == 1)
         {
             char buffer[1024];
@@ -221,34 +203,25 @@ int main()
             function[strlen(function)] = '\0';
             token = strtok(NULL, " ");
             strcpy(path, token);
+            // fgets(function, 100, stdin);
+            //  printf("Enter the path of the file you want to access : ");
+            //  fgets(path, pathSIZE, stdin);
+            printf("function : %s\n", function);
+            printf("path : %s\n", path);
             send(sock, path, strlen(path), 0);
             memset(buffer, '\0', sizeof(buffer));
             handle_read_write(sock, path, function);
         }
-        else if (atoi(choice) == 2)
-        {
-            char buffer[1024];
-            char *function = (char *)malloc(100 * sizeof(char));
-            char *path = (char *)malloc(pathSIZE * sizeof(char));
-            memset(path, '\0', pathSIZE);
-            memset(function, '\0', 100);
-            printf("Enter the function with path of the file you want to access : ");
-            fgets(buffer, 1024, stdin);
-            buffer[strlen(buffer) - 1] = '\0';
-            char *token = strtok(buffer, " ");
-            strcpy(function, token);
-            function[strlen(function)] = '\0';
-            token = strtok(NULL, " ");
-            strcpy(path, token);
-            send(sock, path, strlen(path), 0);
-            handle_create_delete(sock, path, function);
-        }
-        else if (atoi(choice) == 4)
-        {
-            break;
-        }
+        break;
+        // FUNCTIONALITIES LIST TO BE WRITTEN HERE
+        // STARTING WITH ONLY SEDNING PATH TO SERVER
+        // char *operation = (char *)malloc(100 * sizeof(char));
+        // memset(operation, '\0', 100);
+        // // set operation to if-else condition
+        // send(sock, operation, strlen(operation), 0);
     }
     printf("Disconnected from the server.\n");
     close(sock);
+
     return 0;
 }

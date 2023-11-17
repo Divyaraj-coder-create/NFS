@@ -185,6 +185,7 @@ void handle_storage_connection(int client_socket)
         //  Process received data (in this example, just print to console)
         if (i == 0)
         {
+
             strcpy(temp->storage_ip, buffer);
             i++;
             continue;
@@ -260,49 +261,224 @@ void *listen_nm_thread(void *args)
         printf("Accepted connection from %s:%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
         // Handle the connection in a new function
         handle_storage_connection(client_socket);
-        k++;
-        if (k == 1)
-        {
-            break;
-        }
     }
     return NULL;
 }
 
-void give_command_to_nm()
+void give_command_to_nm(char *ip, int port, char *function, char *search_path)
 {
     int sock;
     struct sockaddr_in addr;
     socklen_t addr_size;
     char buffer[1024];
     int n;
-
     sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0)
     {
         perror("[-]Socket error");
         exit(1);
     }
-
     memset(&addr, '\0', sizeof(addr));
     addr.sin_family = AF_INET;
-    addr.sin_port = 10202;
-    addr.sin_addr.s_addr = inet_addr("127.0.0.1");
-
+    addr.sin_port = port;
+    addr.sin_addr.s_addr = inet_addr(ip);
     connect(sock, (struct sockaddr *)&addr, sizeof(addr));
     printf("[+] Connected to the server.\n");
-
     printf("Connected to server\n");
     while (1)
     {
-        char buffer_command[1024];
-        bzero(buffer_command, 1024);
-        printf("Enter command: ");
-        fgets(buffer_command, 1024, stdin);
-        buffer_command[strlen(buffer_command) - 1] = '\0';
-        send(sock, buffer_command, strlen(buffer_command), 0);
-        bzero(buffer_command, 1024);
+        int n1 = recv(sock, buffer, sizeof(buffer), 0);
+        if (n1 == 0)
+        {
+            continue;
+        }
+        buffer[n1] = '\0';
+        if (strcmp(buffer, "Accepted") == 0)
+        {
+            break;
+        }
     }
+    send(sock, function, strlen(function), 0);
+    usleep(1000);
+    send(sock, search_path, strlen(search_path), 0);
+    usleep(1000);
+    while (1)
+    {
+        int n1 = recv(sock, buffer, sizeof(buffer), 0);
+        if (n1 == 0)
+        {
+            continue;
+        }
+        buffer[n1] = '\0';
+        if (strcmp(buffer, "STOP") == 0)
+        {
+            break;
+        }
+    }
+    close(sock);
+}
+
+void execute_client_request(char *command, char *search_path, int sock)
+{
+    int a = atoi(command);
+    printf("%d\n", a);
+    printf("%s\n", search_path);
+    if (a == 1)
+    {
+        struct TrieNode *node = search(search_path, 0);
+        if (node)
+        {
+            char *ip_st = node->storage_node->storage_ip;
+            int port_st = node->storage_node->storage_port_for_client;
+            ip_st[strlen(ip_st)] = '\0';
+            send(sock, ip_st, strlen(ip_st), 0);
+            usleep(1000);
+            char port_st_str[1024];
+            sprintf(port_st_str, "%d", port_st);
+            port_st_str[strlen(port_st_str)] = '\0';
+            send(sock, port_st_str, strlen(port_st_str), 0);
+            // printf("storage_ip: %s\n", node->storage_node->storage_ip);
+            // printf("storage_port_for_NM: %d\n", node->storage_node->storage_port_for_NM);
+            // printf("storage_port_for_client: %d\n", node->storage_node->storage_port_for_client);
+        }
+        else
+        {
+            printf("No such file or directory\n");
+        }
+    }
+    if (a == 2)
+    {
+        usleep(1000);
+        char function_exec[1024];
+        int n1 = recv(sock, function_exec, sizeof(function_exec), 0);
+        function_exec[n1] = '\0';
+        printf("recv function -- %s\n", function_exec);
+        // printf("%s\n", search_path);
+        if (strcmp(function_exec, "DELETE") == 0)
+        {
+            struct TrieNode *node = search(search_path, 0);
+            if (node)
+            {
+                char *ip_st = node->storage_node->storage_ip;
+                int port_st = node->storage_node->storage_port_for_NM;
+                ip_st[strlen(ip_st)] = '\0';
+                give_command_to_nm(ip_st, port_st, function_exec, search_path);
+                // printf("storage_ip: %s\n", node->storage_node->storage_ip);
+                // printf("storage_port_for_NM: %d\n", node->storage_node->storage_port_for_NM);
+                // printf("storage_port_for_client: %d\n", node->storage_node->storage_port_for_client);
+            }
+            else
+            {
+                printf("No such file or directory\n");
+            }
+        }
+        else if (strcmp(function_exec, "CREATE") == 0)
+        {
+            give_command_to_nm("127.0.0.1", 10202, function_exec, search_path);
+        }
+    }
+    printf("returning\n");
+    // send(sock, "STOP", strlen("STOP"), 0);
+}
+
+void handle_client_connection(int client_socket)
+{
+    while (1)
+    {
+        char buffer[4096];
+        char search_path[4096];
+        char command[4096];
+        ssize_t bytes_received;
+        int i = 0;
+        while (1)
+        {
+            char buffer[4096];
+            bytes_received = recv(client_socket, buffer, sizeof(buffer), 0);
+            if (bytes_received == 0)
+            {
+                continue;
+            }
+            buffer[bytes_received] = '\0';
+            if (i == 0)
+            {
+                strcpy(command, buffer);
+                printf("Received from client: %s\n", buffer);
+                i++;
+                if(atoi(command) == 4)
+                {
+                    break;
+                }
+                continue;
+            }
+            printf("Received from client: %s\n", buffer);
+            strcpy(search_path, buffer);
+            if (i == 1)
+            {
+                break;
+            }
+        }
+        if (atoi(command) == 4)
+        {
+            break;
+        }
+        execute_client_request(command, search_path, client_socket);
+        printf("NEW CLIENT REQUEST\n");
+    }
+    printf("Client disconnected\n");
+    close(client_socket);
+}
+
+void *listen_client(void *vargp)
+{
+    int port = 5565;
+    char *ip = "127.0.0.1";
+    int server_sock, client_sock;
+    struct sockaddr_in server_addr, client_addr;
+    socklen_t client_addr_len = sizeof(client_addr);
+    socklen_t addr_size;
+    char buffer[1024];
+    int n;
+    server_sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_sock < 0)
+    {
+        perror("[-]Socket error");
+        exit(1);
+    }
+    printf("[+]TCP server socket created.\n");
+    memset(&server_addr, '\0', sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = port;
+    server_addr.sin_addr.s_addr = inet_addr(ip);
+    n = bind(server_sock, (struct sockaddr *)&server_addr, sizeof(server_addr));
+    if (n < 0)
+    {
+        perror("[-]Bind error");
+        exit(1);
+    }
+    printf("[+]Bind to the port number: %d\n", port);
+    listen(server_sock, 5);
+    printf("Listening...\n");
+    addr_size = sizeof(client_addr);
+    int client_socket;
+    int k = 0;
+    while (1)
+    {
+        // Accept a connection
+        if ((client_socket = accept(server_sock, (struct sockaddr *)&client_addr, &client_addr_len)) == -1)
+        {
+            perror("Error accepting connection");
+            continue;
+        }
+        printf("Accepted connection from %s:%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+        // Handle the connection in a new function
+        handle_client_connection(client_socket);
+        // k++;
+        // if (k == 1)
+        // {
+        //     break;
+        // }
+    }
+    return NULL;
 }
 
 int main()
@@ -310,7 +486,10 @@ int main()
     root = getNode('*');
     pthread_t listen_nm_thread_id;
     pthread_create(&listen_nm_thread_id, NULL, listen_nm_thread, NULL);
+    pthread_t listen_client_thread_id;
+    pthread_create(&listen_client_thread_id, NULL, listen_client, NULL);
     pthread_join(listen_nm_thread_id, NULL);
-    give_command_to_nm();
+    // give_command_to_nm();
+    pthread_join(listen_client_thread_id, NULL);
     return 0;
 }
