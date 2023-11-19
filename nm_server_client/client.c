@@ -12,9 +12,6 @@ int namingServerPort = 5565;
 
 void connection_to_storage_server_for_read_write(char *ip, int port, char *path, char *function)
 {
-    // printf("------%s-----\n", ip);
-    // printf("------%d-----\n", port);
-    // printf("------%s-----\n", path);
     int sock;
     struct sockaddr_in addr;
     socklen_t addr_size;
@@ -28,7 +25,7 @@ void connection_to_storage_server_for_read_write(char *ip, int port, char *path,
     }
     memset(&addr, '\0', sizeof(addr));
     addr.sin_family = AF_INET;
-    addr.sin_port = 5569;
+    addr.sin_port = port;
     addr.sin_addr.s_addr = inet_addr("127.0.0.1");
     connect(sock, (struct sockaddr *)&addr, sizeof(addr));
     printf("[+] Connected to the server.\n");
@@ -62,14 +59,14 @@ void connection_to_storage_server_for_read_write(char *ip, int port, char *path,
             {
                 continue;
             }
-            // usleep(1000);
+            usleep(100);
             buffer[n] = '\0';
             if (strcmp(buffer, "STOP") == 0)
             {
                 printf("----DONE----\n");
                 break;
             }
-            printf("--%s--\n", buffer);
+            printf("%s\n", buffer);
             memset(buffer, '\0', sizeof(buffer));
         }
         close(sock);
@@ -83,6 +80,28 @@ void connection_to_storage_server_for_read_write(char *ip, int port, char *path,
         choice[strlen(choice) - 1] = '\0';
         send(sock, choice, sizeof(choice), 0);
         int a = atoi(choice);
+        int k = 0;
+        printf("WAIT for other to complete WRITE\n");
+        while (1)
+        {
+            int n = recv(sock, buffer, sizeof(buffer), 0);
+            if (k == 0)
+            {
+                k++;
+            }
+            if (n == 0)
+            {
+                continue;
+            }
+            buffer[n] = '\0';
+            if (strcmp(buffer, "Accepted") == 0)
+            {
+                printf("----DONE----\n");
+                break;
+            }
+            // printf("%s\n", buffer);
+            memset(buffer, '\0', sizeof(buffer));
+        }
         if (a == 0)
         {
             printf("Enter string to write: \n");
@@ -144,7 +163,7 @@ void handle_read_write(int sock, char *path, char *function)
     char buffer[1024];
     char ip_for_stor[1024];
     int port_for_stor;
-    int c = 2;
+    int c = 3;
     while (c--)
     {
         int n = recv(sock, buffer, sizeof(buffer), 0);
@@ -160,6 +179,14 @@ void handle_read_write(int sock, char *path, char *function)
             port_for_stor = atoi(buffer);
             memset(buffer, '\0', sizeof(buffer));
         }
+        else if (c == 2)
+        {
+            if (strcmp(buffer, "No such file or directory") == 0)
+            {
+                printf("File not found\n");
+                return;
+            }
+        }
         memset(buffer, '\0', sizeof(buffer));
     }
     connection_to_storage_server_for_read_write(ip_for_stor, port_for_stor, path, function);
@@ -172,6 +199,53 @@ void handle_create_delete(int sock, char *path, char *function)
     memset(function1, '\0', sizeof(function1));
     strcpy(function1, function);
     send(sock, function1, strlen(function1), 0);
+    usleep(1000);
+    while (1)
+    {
+        char buffer[1024];
+        int n = recv(sock, buffer, sizeof(buffer), 0);
+        if (n == 0)
+        {
+            continue;
+        }
+        buffer[n] = '\0';
+        printf("%s\n", buffer);
+        break;
+        memset(buffer, '\0', sizeof(buffer));
+    }
+}
+
+void handle_copy(int sock, char *path)
+{
+    char buffer[1024];
+    memset(buffer, '\0', sizeof(buffer));
+    int n = recv(sock, buffer, sizeof(buffer), 0);
+    buffer[n] = '\0';
+    // printf("%s\n", buffer);
+    if (strcmp(buffer, "Accepted") == 0)
+    {
+        printf("Accepted\n");
+    }
+    else
+    {
+        printf("Not Accepted\n");
+    }
+    memset(buffer, '\0', sizeof(buffer));
+    // while (1)
+    // {
+    //     int n = recv(sock, buffer, sizeof(buffer), 0);
+    //     if (n == 0)
+    //     {
+    //         continue;
+    //     }
+    //     buffer[n] = '\0';
+    //     if (strcmp(buffer, "STOP") == 0)
+    //     {
+    //         break;
+    //     }
+    //     printf("%s\n", buffer);
+    //     memset(buffer, '\0', sizeof(buffer));
+    //}//
 }
 
 int main()
@@ -223,7 +297,29 @@ int main()
             strcpy(path, token);
             send(sock, path, strlen(path), 0);
             memset(buffer, '\0', sizeof(buffer));
-            handle_read_write(sock, path, function);
+            char response[1024];
+            int flag = 0;
+            // while (1)
+            // {
+            //     int nn = recv(sock, response, sizeof(response), 0);
+            //     if (nn == 0)
+            //     {
+            //         continue;
+            //     }
+            //     response[nn] = '\0';
+            //     printf("responce ---- %s\n", response);
+            //     if (strcmp(response, "Not_Found") == 0)
+            //     {
+            //         flag = 1;
+            //         printf("File not found\n");
+            //         break;
+            //     }
+            //     break;
+            // }
+            if (flag == 0)
+            {
+                handle_read_write(sock, path, function);
+            }
         }
         else if (atoi(choice) == 2)
         {
@@ -241,7 +337,53 @@ int main()
             token = strtok(NULL, " ");
             strcpy(path, token);
             send(sock, path, strlen(path), 0);
-            handle_create_delete(sock, path, function);
+            char response[1024];
+            int flag = 0;
+            // while (1)
+            // {
+            //     int nn = recv(sock, response, sizeof(response), 0);
+            //     if (nn == 0)
+            //     {
+            //         continue;
+            //     }
+            //     response[nn] = '\0';
+
+            //     if (strcmp(response, "Not_Found") == 0)
+            //     {
+            //         flag = 1;
+            //         printf("File not found\n");
+            //         break;
+            //     }
+            //     break;
+            // }
+            if (flag == 0)
+            {
+                handle_create_delete(sock, path, function);
+            }
+        }
+        else if (atoi(choice) == 3)
+        {
+            char *function = (char *)malloc(100 * sizeof(char));
+            char *src_path = (char *)malloc(pathSIZE * sizeof(char));
+            char *dst_path = (char *)malloc(pathSIZE * sizeof(char));
+            memset(src_path, '\0', pathSIZE);
+            memset(dst_path, '\0', pathSIZE);
+            memset(function, '\0', 100);
+            printf("Enter the path of the file/directory you want to copy from : ");
+            fgets(src_path, pathSIZE, stdin);
+            printf("Enter the path of the directory you want to copy to : ");
+            fgets(dst_path, pathSIZE, stdin);
+            src_path[strlen(src_path) - 1] = '\0';
+            dst_path[strlen(dst_path) - 1] = '\0';
+            char *path = (char *)malloc(5 * pathSIZE * sizeof(char));
+            memset(path, '\0', 5 * pathSIZE);
+            strcat(path, src_path);
+            strcat(path, "|");
+            strcat(path, dst_path);
+            printf("path : %s\n", path);
+            send(sock, path, strlen(path), 0);
+            memset(buffer, '\0', sizeof(buffer));
+            handle_copy(sock, path);
         }
         else if (atoi(choice) == 4)
         {

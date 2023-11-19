@@ -1,9 +1,92 @@
-#include "headers.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <arpa/inet.h>
+#include <pthread.h>
+#include <fcntl.h>
+#include <stdbool.h>
 #define BUFFER_SIZE 100
 
-int port_for_nm;
-int port_for_client;
+int port_for_nm = 10204;
+int port_for_client = 1234;
 char *ip_for_client = "";
+
+void recv_file_contents(char *path, int client_socket)
+{
+    // printf("path to paste to : %s\n", path);
+    FILE *file = fopen(path, "wb"); // replace with the path of the file you want to send
+    if (file == NULL)
+        perror("ERROR opening file");
+
+    char buffer[BUFFER_SIZE];
+    int n;
+    // Read and send the file
+    while (1)
+    {
+        n = recv(client_socket, buffer, sizeof(buffer), 0);
+        if (n == 0)
+        {
+            continue;
+        }
+        usleep(1000);
+        buffer[n] = '\0';
+        char *if_stop = buffer + strlen(buffer) - 4;
+        if (strcmp(if_stop, "STOP") == 0)
+        {
+            buffer[strlen(buffer) - 4] = '\0';
+            char *tmp_buffer = (char *)malloc(sizeof(char) * 1024);
+            strcpy(tmp_buffer, buffer);
+            // printf("Line recieved from NM: %s\n", tmp_buffer);
+            fwrite(tmp_buffer, 1, n - 4, file);
+            // printf("Done\n");
+            break;
+        }
+        // printf("Line recieved from NM: %s\n", buffer);
+        fwrite(buffer, 1, n, file);
+    }
+
+    // printf("File received successfully.\n");
+
+    // Cleanup and close socket
+    fclose(file);
+}
+
+void send_contents(char *path, int client_socket)
+{
+    // send(port_for_nm, "Sending", strlen("Sending"), 0);
+    // usleep(100);
+    // char *bakwas;
+    // recv(port_for_nm, bakwas, 100, 0);
+    // printf("path to copy from : %s\n", path);
+    FILE *file = fopen(path, "rb"); // replace with the path of the file you want to send
+    if (file == NULL)
+        perror("ERROR opening file");
+
+    char buffer[10 * BUFFER_SIZE];
+    size_t bytesRead;
+
+    // Read and send the file
+    while ((bytesRead = fread(buffer, 1, 10 * BUFFER_SIZE, file)) > 0)
+    {
+        // printf("Sending: %s\n", buffer);
+        send(client_socket, buffer, bytesRead, 0);
+        // recv(client_socket, buffer, sizeof(buffer), 0);
+        memset(buffer, '\0', sizeof(buffer));
+        // usleep(100);
+    }
+
+    strcpy(buffer, "STOP");
+    // printf("Sending: %s\n", buffer);
+    send(client_socket, buffer, strlen(buffer), 0);
+
+    printf("File sent successfully.\n");
+
+    // Cleanup and close socket
+    fclose(file);
+}
 
 void send_file_contents(const char *filename, int socket)
 {
@@ -82,6 +165,16 @@ void handle_command(char *function, char *path, int client_socket)
             printf("Folder name: %s is deleted\n", folder_name);
         }
     }
+    else if (strcmp(function, "copy_from_you") == 0)
+    {
+        printf("copy_from_you\n");
+        send_contents(path, client_socket);
+    }
+    else if (strcmp(function, "paste_to_you") == 0)
+    {
+        printf("paste_to_you\n");
+        recv_file_contents(path, client_socket);
+    }
     else
     {
         printf("Invalid command\n");
@@ -109,6 +202,14 @@ void handle_nm_connection(int client_socket)
     handle_command(copy_buffer, buffer, client_socket);
     printf("------- nm_server disconnected -------\n");
     close(client_socket);
+}
+
+void *handle_nm_connection_thread(void *arg)
+{
+    int client_socket = *((int *)arg);
+    handle_nm_connection(client_socket);
+    close(client_socket);
+    return NULL;
 }
 
 void *listen_nm(void *vargp)
@@ -154,7 +255,9 @@ void *listen_nm(void *vargp)
         printf("Accepted connection from %s:%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
         printf("------- nm_server connected -------\n");
         // Handle the connection in a new function
-        handle_nm_connection(client_socket);
+        pthread_t nm_thread_id;
+        pthread_create(&nm_thread_id, NULL, handle_nm_connection_thread, (void *)&client_socket);
+        // handle_nm_connection(client_socket);
     }
     return NULL;
 }
@@ -169,8 +272,6 @@ void read_or_write(char *path, char *type, int client_socket)
 {
     if (strcmp(type, "READ") == 0)
     {
-        // write code to read contents of file with path
-        // and send it to client
         printf("--READ--\n");
         FILE *file = fopen(path, "r");
         if (file == NULL)
@@ -182,7 +283,7 @@ void read_or_write(char *path, char *type, int client_socket)
         // Read file line by line and send each line to the server
         while (fgets(line_buffer, sizeof(line_buffer), file) != NULL)
         {
-            // printf("Sending: %s", line_buffer);
+            printf("Sending: %s", line_buffer);
             line_buffer[strlen(line_buffer)] = '\0';
             send(client_socket, line_buffer, strlen(line_buffer), 0);
             usleep(100);
@@ -190,6 +291,7 @@ void read_or_write(char *path, char *type, int client_socket)
         printf("a");
         // usleep(100);
         fclose(file);
+        // usleep(1000);
         strcpy(line_buffer, "STOP");
         line_buffer[strlen(line_buffer)] = '\0';
         printf("Sending:--%s--", line_buffer);
@@ -205,6 +307,25 @@ void read_or_write(char *path, char *type, int client_socket)
         int choice1 = atoi(choice);
         if (choice1 == 1)
         {
+            FILE *file;
+            int a = 0;
+            file = fopen(path, "a");
+            int fd = fileno(file);
+            while (1)
+            {
+                int ff = flock(fd, LOCK_EX | LOCK_NB);
+                if (ff != -1)
+                {
+                    break;
+                }
+                if (a == 0 && ff == -1)
+                {
+                    printf("Waiting for file to be free\n");
+                    a++;
+                }
+            }
+            send(client_socket, "Accepted", strlen("Accepted"), 0);
+            usleep(100);
             while (1)
             {
                 char string[1024];
@@ -219,20 +340,39 @@ void read_or_write(char *path, char *type, int client_socket)
                 {
                     break;
                 }
-                FILE *file = fopen(path, "a");
                 if (file == NULL)
                 {
                     perror("Error opening file");
                     exit(EXIT_FAILURE);
                 }
                 fprintf(file, "%s\n", string);
-                fclose(file);
             }
+            flock(fd, LOCK_UN);
+            fclose(file);
         }
         else if (choice1 == 0)
         {
-            FILE *file = fopen(path, "w");
-            fclose(file);
+            // fclose(file);
+            // FILE *file1 = fopen(path, "a");
+
+            FILE *file1;
+            int a = 0;
+            file1 = fopen(path, "w");
+            int fd = fileno(file1);
+            while (1)
+            {
+                int ff = flock(fd, LOCK_EX | LOCK_NB);
+                if (ff != -1)
+                {
+                    break;
+                }
+                if (a == 0 && ff == -1)
+                {
+                    printf("Waiting for file to be free\n");
+                    a++;
+                }
+            }
+            send(client_socket, "Accepted", strlen("Accepted"), 0);
             while (1)
             {
                 char string[1024];
@@ -247,15 +387,15 @@ void read_or_write(char *path, char *type, int client_socket)
                 {
                     break;
                 }
-                FILE *file = fopen(path, "a");
-                if (file == NULL)
+                if (file1 == NULL)
                 {
                     perror("Error opening file");
                     exit(EXIT_FAILURE);
                 }
-                fprintf(file, "%s\n", string);
-                fclose(file);
+                fprintf(file1, "%s\n", string);
             }
+            flock(fd, LOCK_UN);
+            fclose(file1);
         }
         else
         {
@@ -308,6 +448,14 @@ void handle_client_connection(int client_socket)
     close(client_socket);
 }
 
+void *handle_client_connection_thread(void *arg)
+{
+    int client_socket = *((int *)arg);
+    handle_client_connection(client_socket);
+    close(client_socket);
+    return NULL;
+}
+
 void *listen_client(void *vargp)
 {
     int port = port_for_client;
@@ -327,7 +475,7 @@ void *listen_client(void *vargp)
     printf("[+]TCP server socket created.\n");
     memset(&server_addr, '\0', sizeof(server_addr));
     server_addr.sin_family = AF_INET;
-    server_addr.sin_port = 5569;
+    server_addr.sin_port = port_for_client;
     server_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
     n = bind(server_sock, (struct sockaddr *)&server_addr, sizeof(server_addr));
     if (n < 0)
@@ -351,12 +499,14 @@ void *listen_client(void *vargp)
         printf("Accepted connection from %s:%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
         printf("------- client connected -------\n");
         // Handle the connection in a new function
-        handle_client_connection(client_socket);
+        pthread_t client_thread_id;
+        pthread_create(&client_thread_id, NULL, handle_client_connection_thread, (void *)&client_socket);
+        // handle_client_connection(client_socket);
     }
     return NULL;
 }
 
-int main()
+void *intial_connection(void *argp)
 {
     int sock;
     struct sockaddr_in addr;
@@ -381,9 +531,33 @@ int main()
 
     printf("Connected to server\n");
     // Send file contents to the server
-    send_file_contents("server_1_list.txt", sock);
-
+    send_file_contents("server_2_list.txt", sock);
+    printf("if you want to exit WRITE close_storage :\n");
+    while (1)
+    {
+        char command[1024];
+        scanf("%s", command);
+        printf("command: %s\n", command);
+        if (strcmp(command, "close_storage") == 0)
+        {
+            send(sock, command, strlen(command), 0);
+            printf("Closing storage\n");
+            exit(0);
+            break;
+        }
+        else
+        {
+            printf("Invalid command\n");
+        }
+    }
     close(sock);
+    return NULL;
+}
+
+int main()
+{
+    pthread_t intial_connection_thread_id;
+    pthread_create(&intial_connection_thread_id, NULL, intial_connection, NULL);
 
     pthread_t listen_nm_thread_id;
     pthread_create(&listen_nm_thread_id, NULL, listen_nm, NULL);
@@ -391,7 +565,9 @@ int main()
     pthread_t listen_client_thread_id;
     pthread_create(&listen_client_thread_id, NULL, listen_client, NULL);
 
+
     pthread_join(listen_nm_thread_id, NULL);
     pthread_join(listen_client_thread_id, NULL);
+    pthread_join(intial_connection_thread_id, NULL);
     // Close the client socket
 }
