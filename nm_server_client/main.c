@@ -1,8 +1,11 @@
-#include "headers.h"
+// #include "headers.h"
+#include "main.h"
+
 int num_of_storage_servers = 5;
 struct TrieNode *root;
 struct storage_node *storage_server = NULL;
 
+struct storage_node *st_array[1000];
 // void **handle_storage_connection_thread(void *arg)
 // {
 //     int client_socket = *((int *)arg);
@@ -14,7 +17,6 @@ struct storage_node *storage_server = NULL;
 #define LRULIMIT 5
 #define ARRAYSIZE 100007
 struct ll *head;
-;
 
 int size_cache = 0;
 
@@ -117,6 +119,34 @@ void insert_cache(char *path, struct storage_node *st)
     }
 }
 
+void delete_cache(char *path)
+{
+
+    int index = det_index(path);
+    if (cache[index] != NULL)
+    {
+        cache[index] = NULL;
+        size_cache--;
+        struct ll *temp = head;
+        struct ll *node = head;
+        while (node->next != NULL)
+        {
+            if (node->next->index == index)
+            {
+                printf("Deleted %d\n", index);
+                struct ll *tmp = node->next;
+                struct ll *temp1 = node->next->next;
+                node->next = temp1;
+                tmp = NULL;
+                // tmp->next = head->next;
+                // head->next = tmp;
+                break;
+            }
+            node = node->next;
+        }
+    }
+}
+
 struct storage_node *search_cache(char *path)
 {
     int index = det_index(path);
@@ -200,10 +230,17 @@ struct TrieNode *search_path(struct TrieNode *root, char *path, int path_len)
         // printf("storage_port_for_client: %d\n", root->storage_node->storage_port_for_client);
         return root;
     }
+
     if ((path_len + 1) == strlen(path))
     {
+        if (root->storage_node != NULL)
+        {
+            root->storage_node->is_read = 1;
+            return root;
+        }
         return NULL;
     }
+
     if (root->children[path[path_len + 1]] != NULL)
     {
         // printf("%c", root->children[path[path_len + 1]]->current_char);
@@ -305,6 +342,55 @@ void client_connection(int client_sock)
     }
 }
 
+void replicant_function(char **path_storage, int count_path, struct storage_node *temp, struct storage_node *temp_copy)
+{
+
+    int src_port = temp->storage_port_for_NM;
+    char *src_ip = temp->storage_ip;
+    int dest_port = temp_copy->storage_port_for_NM;
+    char *dest_ip = temp_copy->storage_ip;
+    int folder_id = temp->storage_id;
+    printf("%d\n", folder_id);
+    char *folder_path_str = (char *)malloc(sizeof(char) * 1024);
+    strcat(folder_path_str, "storage_server_");
+    char folder_id_str[1024];
+    sprintf(folder_id_str, "%d", folder_id);
+    strcat(folder_path_str, folder_id_str);
+    strcat(folder_path_str, "/");
+    printf("%s\n", folder_path_str);
+    give_command_to_nm(dest_ip, dest_port, "CREATE", folder_path_str);
+    for (int i = 0; i < count_path; i++)
+    {
+        char *src_path = (char *)malloc(sizeof(char) * 1024);
+        strcpy(src_path, path_storage[i]);
+        char *dest_path = (char *)malloc(sizeof(char) * 1024);
+        strcpy(dest_path, "./");
+        strcat(dest_path, folder_path_str);
+        // printf("src_path : %s\n", src_path);
+        if (src_path[strlen(src_path) - 1] == '/')
+        {
+            // give_command_to_nm(dest_ip, dest_port, "CREATE", dest_path);
+            copy_folder_parallely(src_ip, dest_ip, src_port, dest_port, src_path, dest_path, folder_id, temp->storage_port_for_NM, temp_copy->storage_port_for_NM);
+        }
+        else
+        {
+            printf("src_path : %s\n", src_path);
+            copy_parallely(src_ip, dest_ip, src_port, dest_port, src_path, dest_path, folder_id, temp->storage_port_for_NM, temp_copy->storage_port_for_NM);
+        }
+    }
+    printf("Replication done\n");
+    // char *src_path = (char *)malloc(sizeof(char) * 1024);
+    // strcpy(src_path, "./ansh/");
+    // int src_server_number = folder_id;
+    // int src_port_for_nm = temp->storage_port_for_NM;
+    // int dest_port_for_nm = temp_copy->storage_port_for_NM;
+    // char *dest_path = (char *)malloc(sizeof(char) * 1024);
+    // strcpy(dest_path, "./");
+    // //  strcat(folder_path_str, "/");
+    // strcat(dest_path, folder_path_str);
+    // copy_folder_parallely(src_ip, dest_ip, src_port, dest_port, src_path, dest_path, src_server_number, src_port_for_nm, dest_port_for_nm);
+}
+
 void handle_storage_connection(int client_socket)
 {
     char buffer[4096];
@@ -314,10 +400,13 @@ void handle_storage_connection(int client_socket)
         path_storage[i] = (char *)malloc(sizeof(char) * 1024);
     }
     int count_path = 0;
+
     // Receive data from the client
     struct storage_node *temp = (struct storage_node *)malloc(sizeof(struct storage_node));
     ssize_t bytes_received;
     int i = 0;
+    int dd = 0;
+    int ccc = 0;
     while ((bytes_received = recv(client_socket, buffer, sizeof(buffer), 0)) > 0)
     {
         buffer[bytes_received - 1] = '\0';
@@ -341,19 +430,60 @@ void handle_storage_connection(int client_socket)
             i++;
             continue;
         }
+        if (i == 3)
+        {
+            temp->storage_id = atoi(buffer);
+            i++;
+            continue;
+        }
+        if (strcmp(buffer, "DONE") == 0)
+        {
+            break;
+        }
         // buffer[bytes_received - 1] = '\0'; // Null-terminate the received data
+        // printf("%s\n", buffer);
         insert_path(buffer, temp);
         strcpy(path_storage[count_path], buffer);
         count_path++;
-        // printf("Received from client: %s\n", buffer);
     }
-    int nn = recv(client_socket, buffer, sizeof(buffer), 0);
-    buffer[nn] = '\0';
+    // printf("sssss\n");
+    //  printf("Received from client: %s\n", buffer);
+    st_array[temp->storage_id] = temp;
+    if (temp->storage_id > 2)
+    {
+        temp->replicate1 = st_array[temp->storage_id - 1];
+        temp->replicate2 = st_array[temp->storage_id - 2];
+    }
+    else
+    {
+        temp->replicate1 = NULL;
+        temp->replicate2 = NULL;
+    }
+    if (temp->storage_id > 2)
+    {
+        printf("Replication started\n");
+        replicant_function(path_storage, count_path, temp, temp->replicate1);
+    }
+    while (1)
+    {
+        int nn = recv(client_socket, buffer, sizeof(buffer), 0);
+        buffer[nn] = '\0';
+        if (strcmp(buffer, "CLOSE") == 0)
+        {
+            break;
+        }
+    }
     printf("Received from storage: %s\n", buffer);
-    while(count_path--)
+    if (temp->storage_id > 2)
+    {
+        replicant_function(path_storage, count_path, temp, temp->replicate1);
+    }
+    send(client_socket, "CLOSE", strlen("CLOSE"), 0);
+    while (count_path--)
     {
         path_storage[count_path][strlen(path_storage[count_path])] = '\0';
-        delete(path_storage[count_path]);
+        delete (path_storage[count_path]);
+        delete_cache(path_storage[count_path]);
     }
     if (bytes_received == 0)
     {
@@ -598,6 +728,138 @@ void copy_parallely(char *src_ip, char *dest_ip, int src_port, int dest_port, ch
     close(sock);
 }
 
+void copy_folder_parallely(char *src_ip, char *dest_ip, int src_port, int dest_port, char *src_path, char *dest_path, int src_server_number, int src_port_for_nm, int dest_port_for_nm)
+{
+    int sock;
+    struct sockaddr_in addr;
+    socklen_t addr_size;
+    char buffer[1024];
+    int n;
+    sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0)
+    {
+        perror("[-]Socket error");
+        exit(1);
+    }
+    memset(&addr, '\0', sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = src_port;
+    addr.sin_addr.s_addr = inet_addr(src_ip);
+    connect(sock, (struct sockaddr *)&addr, sizeof(addr));
+    printf("[+] Connected to the server %d for Copying.\n", src_server_number + 1);
+    while (1)
+    {
+        int n1 = recv(sock, buffer, sizeof(buffer), 0);
+        if (n1 == 0)
+        {
+            continue;
+        }
+        buffer[n1] = '\0';
+        if (strcmp(buffer, "Accepted") == 0)
+        {
+            break;
+        }
+    }
+    // printf("Connected to server\n");
+    send(sock, "copy_folder_from_you", strlen("copy_folder_from_you"), 0);
+    usleep(1000);
+    char *sending_command = (char *)malloc(sizeof(char) * 1024);
+    strcpy(sending_command, src_path);
+    send(sock, sending_command, strlen(sending_command), 0);
+
+    usleep(1000);
+    int port = rand() % (9999 - 1000 + 1) + 1000;
+    char port_str[1024];
+    sprintf(port_str, "%d", port);
+    send(sock, port_str, strlen(port_str), 0);
+    usleep(1000);
+
+    int sock1;
+    struct sockaddr_in addr1;
+    socklen_t addr_size1;
+    sock1 = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock1 < 0)
+    {
+        perror("[-]Socket error");
+        exit(1);
+    }
+
+    memset(&addr1, '\0', sizeof(addr1));
+    addr1.sin_family = AF_INET;
+    addr1.sin_port = dest_port;
+    addr1.sin_addr.s_addr = inet_addr(dest_ip);
+    connect(sock1, (struct sockaddr *)&addr1, sizeof(addr1));
+    printf("[+] Connected to the server for Pasting.\n");
+    // printf("Connected to server\n");
+    while (1)
+    {
+        int n1 = recv(sock1, buffer, sizeof(buffer), 0);
+        if (n1 == 0)
+        {
+            continue;
+        }
+        buffer[n1] = '\0';
+        if (strcmp(buffer, "Accepted") == 0)
+        {
+            break;
+        }
+    }
+
+    send(sock1, "paste_folder_to_you", strlen("paste_folder_to_you"), 0);
+    usleep(1000);
+    char *copy_file = (char *)malloc(sizeof(char) * 1024);
+    char *copy_file1 = (char *)malloc(sizeof(char) * 1024);
+    strcpy(copy_file, src_path);
+    strcpy(copy_file1, src_path);
+    char *token = strtok(copy_file1, "/");
+    strcpy(copy_file, token);
+    while (1)
+    {
+        strcpy(copy_file, token);
+        token = strtok(NULL, "/");
+        if (token == NULL)
+        {
+            break;
+        }
+    }
+    // strcat(dest_path, "/");
+    strcat(dest_path, copy_file);
+    send(sock1, dest_path, strlen(dest_path), 0);
+    // usleep(1000);
+    // printf("Will start to recieve from here\n");
+    // send(sock, "bakwas", sizeof("bakwas"), 0);
+    usleep(1000);
+    send(sock1, port_str, strlen(port_str), 0);
+    usleep(1000);
+
+    while (1)
+    {
+        int n1 = recv(sock, buffer, sizeof(buffer), 0);
+        // send(sock1, buffer, strlen(buffer), 0);
+        if (n1 == 0 || buffer[0] == '\0')
+        {
+            continue;
+        }
+        usleep(1000);
+        buffer[n1] = '\0';
+        char *if_stop = buffer + strlen(buffer) - 4;
+        if (strcmp(if_stop, "STOP") == 0)
+        {
+            buffer[strlen(buffer) - 4] = '\0';
+            char *tmp_buffer = (char *)malloc(sizeof(char) * 1024);
+            strcpy(tmp_buffer, buffer);
+            printf("%s\n", tmp_buffer);
+            send(sock1, tmp_buffer, strlen(tmp_buffer), 0);
+            send(sock1, "STOP", strlen("STOP"), 0);
+            printf("Done\n");
+            break;
+        }
+        printf("buffer : %s\n", buffer);
+        // send(sock1, buffer, strlen(buffer), 0);
+    }
+    close(sock);
+}
+
 // pthread_mutex_t lock1;
 
 void execute_client_request(char *command, char *search_path, int sock)
@@ -623,6 +885,11 @@ void execute_client_request(char *command, char *search_path, int sock)
             sprintf(port_st_str, "%d", port_st);
             port_st_str[strlen(port_st_str)] = '\0';
             send(sock, port_st_str, strlen(port_st_str), 0);
+            usleep(1000);
+            char path_ss[1024];
+            strcpy(path_ss, "SELF");
+            send(sock, path_ss, strlen(path_ss), 0);
+            usleep(1000);
             // pthread_mutex_unlock(&lock1);
         }
         else
@@ -630,26 +897,93 @@ void execute_client_request(char *command, char *search_path, int sock)
             struct TrieNode *node = search(search_path, 0);
             if (node)
             {
-                send(sock, "Found", strlen("Found"), 0);
-                printf("Found\n");
-                usleep(1000);
-                char *ip_st = node->storage_node->storage_ip;
-                int port_st = node->storage_node->storage_port_for_client;
-                ip_st[strlen(ip_st)] = '\0';
-                send(sock, ip_st, strlen(ip_st), 0);
-                usleep(1000);
-                char port_st_str[1024];
-                sprintf(port_st_str, "%d", port_st);
-                port_st_str[strlen(port_st_str)] = '\0';
-                send(sock, port_st_str, strlen(port_st_str), 0);
-                insert_cache(search_path, node->storage_node);
+
+                if (node->isEndOfPath == 0)
+                {
+                    if (node->storage_node->replicate1 != NULL)
+                    {
+                        send(sock, "Found", strlen("Found"), 0);
+                        printf("Found\n");
+                        usleep(1000);
+                        char *ip_st = node->storage_node->replicate1->storage_ip;
+                        int port_st = node->storage_node->replicate1->storage_port_for_client;
+                        ip_st[strlen(ip_st)] = '\0';
+                        send(sock, ip_st, strlen(ip_st), 0);
+                        usleep(1000);
+                        char port_st_str[1024];
+                        sprintf(port_st_str, "%d", port_st);
+                        port_st_str[strlen(port_st_str)] = '\0';
+                        send(sock, port_st_str, strlen(port_st_str), 0);
+                        usleep(1000);
+                        int x = node->storage_node->storage_id;
+                        char *path_ss = (char *)malloc(sizeof(char) * 1024);
+                        strcpy(path_ss, "storage_server_");
+                        char path_ss_id[1024];
+                        sprintf(path_ss_id, "%d", x);
+                        strcat(path_ss, path_ss_id);
+                        send(sock, path_ss, strlen(path_ss), 0);
+                        usleep(1000);
+                        insert_cache(search_path, node->storage_node);
+                    }
+                    else if (node->storage_node->replicate2 != NULL)
+                    {
+                        send(sock, "Found", strlen("Found"), 0);
+                        printf("Found\n");
+                        usleep(1000);
+                        char *ip_st = node->storage_node->replicate2->storage_ip;
+                        int port_st = node->storage_node->replicate2->storage_port_for_client;
+                        ip_st[strlen(ip_st)] = '\0';
+                        send(sock, ip_st, strlen(ip_st), 0);
+                        usleep(1000);
+                        char port_st_str[1024];
+                        sprintf(port_st_str, "%d", port_st);
+                        port_st_str[strlen(port_st_str)] = '\0';
+                        send(sock, port_st_str, strlen(port_st_str), 0);
+                        usleep(1000);
+                        int x = node->storage_node->storage_id;
+                        char *path_ss = (char *)malloc(sizeof(char) * 1024);
+                        strcpy(path_ss, "storage_server_");
+                        char path_ss_id[1024];
+                        sprintf(path_ss_id, "%d", x);
+                        strcat(path_ss, path_ss_id);
+                        send(sock, path_ss, strlen(path_ss), 0);
+                        usleep(1000);
+                        insert_cache(search_path, node->storage_node);
+                    }
+                    else
+                    {
+                        printf("Cannot be read\n");
+                    }
+                }
+                else
+                {
+                    send(sock, "Found", strlen("Found"), 0);
+                    printf("Found\n");
+                    usleep(1000);
+                    char *ip_st = node->storage_node->storage_ip;
+                    int port_st = node->storage_node->storage_port_for_client;
+                    ip_st[strlen(ip_st)] = '\0';
+                    send(sock, ip_st, strlen(ip_st), 0);
+                    usleep(1000);
+                    char port_st_str[1024];
+                    sprintf(port_st_str, "%d", port_st);
+                    port_st_str[strlen(port_st_str)] = '\0';
+                    printf("port------ %s\n", port_st_str);
+                    send(sock, port_st_str, strlen(port_st_str), 0);
+                    usleep(1000);
+                    char path_ss[1024];
+                    strcpy(path_ss, "SELF");
+                    send(sock, path_ss, strlen(path_ss), 0);
+                    usleep(1000);
+                    insert_cache(search_path, node->storage_node);
+                }
                 // printf("storage_ip: %s\n", node->storage_node->storage_ip);
                 // printf("storage_port_for_NM: %d\n", node->storage_node->storage_port_for_NM);
                 // printf("storage_port_for_client: %d\n", node->storage_node->storage_port_for_client);
             }
             else
             {
-                send(sock, "No such file or directory", strlen("No such file or directory"), 0);
+                send(sock, "STOP", strlen("STOP"), 0);
                 usleep(1000);
                 printf("No such file or directory\n");
             }
@@ -676,18 +1010,21 @@ void execute_client_request(char *command, char *search_path, int sock)
                 // pthread_mutex_unlock(&lock1);
                 send(sock, "Deleted", strlen("Deleted"), 0);
                 usleep(1000);
+                delete (search_path);
+                delete_cache(search_path);
                 give_command_to_nm(ip_st, port_st, function_exec, search_path);
             }
             else
             {
                 struct TrieNode *node = search(search_path, 0);
-                if (node)
+                if (node && node->isEndOfPath != 0)
                 {
                     char *ip_st = node->storage_node->storage_ip;
                     int port_st = node->storage_node->storage_port_for_NM;
                     ip_st[strlen(ip_st)] = '\0';
                     // insert_cache(search_path, node->storage_node);
                     delete (search_path);
+                    // delete_cache(search_path);
                     // pthread_mutex_unlock(&lock1);
                     send(sock, "Deleted", strlen("Deleted"), 0);
                     give_command_to_nm(ip_st, port_st, function_exec, search_path);
@@ -698,6 +1035,7 @@ void execute_client_request(char *command, char *search_path, int sock)
                 }
                 else
                 {
+
                     send(sock, "No such file or directory", strlen("No such file or directory"), 0);
                     // pthread_mutex_unlock(&lock1);
                     printf("No such file or directory\n");
@@ -720,7 +1058,7 @@ void execute_client_request(char *command, char *search_path, int sock)
             else
             {
                 struct TrieNode *node = search(search_path, 0);
-                if (node)
+                if (node && node->isEndOfPath != 0)
                 {
                     // insert_cache(search_path, node->storage_node);
                     // send path already exists
@@ -747,6 +1085,7 @@ void execute_client_request(char *command, char *search_path, int sock)
     }
     if (a == 3)
     {
+
         send(sock, "Accepted", strlen("Accepted"), 0);
         char *src_path = (char *)malloc(sizeof(char) * 1024);
         char *dest_path = (char *)malloc(sizeof(char) * 1024);
@@ -761,10 +1100,11 @@ void execute_client_request(char *command, char *search_path, int sock)
         struct TrieNode *node = search(src_path, 0);
         if (node == NULL)
         {
-            printf("No such file or directory for %s\n", src_path);
+            printf("No such file or directory for --%s--\n", src_path);
         }
-        else
+        else if (node->isEndOfPath != 0)
         {
+
             printf("storage_ip: %s\n", node->storage_node->storage_ip);
             int src_port = node->storage_node->storage_port_for_NM;
             char *src_ip = node->storage_node->storage_ip;
@@ -784,7 +1124,14 @@ void execute_client_request(char *command, char *search_path, int sock)
             int dest_port_for_nm = node->storage_node->storage_port_for_NM;
             dest_ip[strlen(dest_ip)] = '\0';
             // pthread_mutex_unlock(&lock1);
-            copy_parallely(src_ip, dest_ip, src_port, dest_port, src_path, dest_path, src_server_number, src_port_for_nm, dest_port_for_nm);
+            if (src_path[strlen(src_path) - 1] == '/')
+            {
+                copy_folder_parallely(src_ip, dest_ip, src_port, dest_port, src_path, dest_path, src_server_number, src_port_for_nm, dest_port_for_nm);
+            }
+            else
+            {
+                copy_parallely(src_ip, dest_ip, src_port, dest_port, src_path, dest_path, src_server_number, src_port_for_nm, dest_port_for_nm);
+            }
             // send(sock, "STOP", strlen("STOP"), 0);
         }
     }

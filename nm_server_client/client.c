@@ -29,6 +29,9 @@ void connection_to_storage_server_for_read_write(char *ip, int port, char *path,
     addr.sin_addr.s_addr = inet_addr("127.0.0.1");
     connect(sock, (struct sockaddr *)&addr, sizeof(addr));
     printf("[+] Connected to the server.\n");
+    printf("%d\n", port);
+    printf("%s\n", ip);
+    printf("%s\n", path);
     char buffer1[1024];
     while (1)
     {
@@ -163,33 +166,54 @@ void handle_read_write(int sock, char *path, char *function)
     char buffer[1024];
     char ip_for_stor[1024];
     int port_for_stor;
-    int c = 3;
+    int c = 4;
     while (c--)
     {
         int n = recv(sock, buffer, sizeof(buffer), 0);
         buffer[n] = '\0';
         printf("%s\n", buffer);
-        if (c == 1)
+        if (c == 2)
         {
             strcpy(ip_for_stor, buffer);
             memset(buffer, '\0', sizeof(buffer));
         }
-        else if (c == 0)
+        else if (c == 1)
         {
             port_for_stor = atoi(buffer);
             memset(buffer, '\0', sizeof(buffer));
         }
-        else if (c == 2)
+        else if (c == 3)
         {
-            if (strcmp(buffer, "No such file or directory") == 0)
+            if (strcmp(buffer, "STOP") == 0)
             {
                 printf("File not found\n");
                 return;
             }
         }
+        else if (c == 0)
+        {
+            if (strcmp(buffer, "SELF") == 0)
+            {
+                printf("SELF if\n");
+                connection_to_storage_server_for_read_write(clientIP,port_for_stor, path, function);
+            }
+            else
+            {
+                printf("buffer : %s\n", buffer);
+                char path_dup[1024];
+                strcpy(path_dup, "./");
+                strcat(path_dup, buffer);
+                //printf("path_dup : %s\n", path_dup);
+                strcat(path_dup, "/");
+                strcat(path_dup, path);
+                printf("path_dup : %s\n", path_dup);
+                strcpy(path, path_dup);
+                connection_to_storage_server_for_read_write(ip_for_stor, port_for_stor, path, function);
+            }
+        }
         memset(buffer, '\0', sizeof(buffer));
     }
-    connection_to_storage_server_for_read_write(ip_for_stor, port_for_stor, path, function);
+    //connection_to_storage_server_for_read_write(ip_for_stor, port_for_stor, path, function);
 }
 
 void handle_create_delete(int sock, char *path, char *function)
@@ -231,21 +255,6 @@ void handle_copy(int sock, char *path)
         printf("Not Accepted\n");
     }
     memset(buffer, '\0', sizeof(buffer));
-    // while (1)
-    // {
-    //     int n = recv(sock, buffer, sizeof(buffer), 0);
-    //     if (n == 0)
-    //     {
-    //         continue;
-    //     }
-    //     buffer[n] = '\0';
-    //     if (strcmp(buffer, "STOP") == 0)
-    //     {
-    //         break;
-    //     }
-    //     printf("%s\n", buffer);
-    //     memset(buffer, '\0', sizeof(buffer));
-    //}//
 }
 
 int main()

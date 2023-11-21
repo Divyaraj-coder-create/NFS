@@ -16,7 +16,9 @@ struct storage_node
     char storage_ip[16];
     int storage_port_for_NM;
     int storage_port_for_client;
-    struct storage_node *next;
+    struct storage_node *replicate1;
+    struct storage_node *replicate2;
+    int is_read;
 };
 
 struct TrieNode
@@ -32,13 +34,16 @@ struct TrieNode
 extern struct TrieNode *trie_root;
 extern struct storage_node *storage_server;
 
-struct TrieNode *getNode(char current_char);
-void insert_path(const char *path, struct storage_node *storage_node);
-void print_trie(struct TrieNode *root);
-struct TrieNode *search(char *path, int path_len);
-struct TrieNode *search_path(struct TrieNode *root, char *path, int path_len);
-int delete_node(struct TrieNode *node, char *path, int current);
-int delete(char *path);
-void client_connection(int client_sock);
-void handle_storage_connection(int client_socket);
-void *listen_nm_thread(void *args);
+// struct TrieNode *getNode(char current_char);
+// void insert_path(const char *path, struct storage_node *storage_node);
+// void print_trie(struct TrieNode *root);
+// struct TrieNode *search(char *path, int path_len);
+// struct TrieNode *search_path(struct TrieNode *root, char *path, int path_len);
+// int delete_node(struct TrieNode *node, char *path, int current);
+// int delete(char *path);
+// void client_connection(int client_sock);
+// void handle_storage_connection(int client_socket);
+// void *listen_nm_thread(void *args);
+
+
+

@@ -8,11 +8,24 @@
 #include <pthread.h>
 #include <fcntl.h>
 #include <stdbool.h>
-#define BUFFER_SIZE 100
+#include <dirent.h>
+#include <sys/stat.h>
+#include <limits.h>
 
 int port_for_nm = 10203;
 int port_for_client = 1233;
+
+#define BUFFER_SIZE 100
+#define MAX_PATH_LENGTH 1000
+
+int port_for_storage_communication;
 char *ip_for_client = "";
+
+void error(const char *msg)
+{
+    perror(msg);
+    exit(1);
+}
 
 void recv_file_contents(char *path, int client_socket)
 {
@@ -54,6 +67,167 @@ void recv_file_contents(char *path, int client_socket)
     fclose(file);
 }
 
+void receive_folder_handler(int server_socket, const char *current_folder)
+{
+    char item_name[MAX_PATH_LENGTH];
+    while (1)
+    {
+        int is_dir;
+        if (recv(server_socket, &is_dir, sizeof(is_dir), 0) < 0)
+            error("ERROR receiving is_dir");
+
+        // printf("is_dir: %d\n", is_dir);
+
+        if (is_dir == -1)
+            break;
+
+        if (is_dir == 0)
+        {
+            if (recv(server_socket, &item_name, sizeof(item_name), 0) <= 0)
+                error("ERROR receiving file name");
+
+            char *new_path = (char *)malloc(sizeof(char) * (sizeof(item_name) + sizeof(current_folder) + 5));
+            strcpy(new_path, current_folder);
+            strcat(new_path, "/");
+            strcat(new_path, item_name);
+
+            // printf("item_name: %s\n", new_path);
+
+            // receive_file(server_socket, new_path);
+        }
+        else
+        {
+            if (recv(server_socket, &item_name, sizeof(item_name), 0) <= 0)
+                error("ERROR receiving folder name");
+
+            // printf("item_name: %s\n", item_name);
+
+            char *new_path = (char *)malloc(sizeof(char) * (sizeof(item_name) + sizeof(current_folder) + 5));
+            strcpy(new_path, current_folder);
+            strcat(new_path, "/");
+            strcat(new_path, item_name);
+            // snprintf(new_path, sizeof(new_path), "%s/%s", current_folder, item_name);
+            // printf("item_name:-> %s\n", new_path);
+            mkdir(item_name, 0777);
+            chdir(item_name);
+            receive_folder_handler(server_socket, new_path);
+        }
+    }
+    chdir("..");
+}
+
+void receive_files_from_folder_handler(int client_socket, const char *folder_path, int size_of_pre_path)
+{
+    // printf("folder_path: %s\n", folder_path);
+    chdir("..");
+    int t = 0;
+    char item_name[MAX_PATH_LENGTH];
+    while (1)
+    {
+        recv(client_socket, &item_name, sizeof(item_name), 0);
+        if (strcmp(item_name, "-1") == 0)
+            break;
+
+        char *new_path = (char *)malloc(sizeof(char) * (sizeof(item_name) + sizeof(folder_path) + 5));
+        strcpy(new_path, folder_path);
+        strcat(new_path, "/");
+
+        char *temp = (char *)malloc(sizeof(char) * (sizeof(item_name) + 5));
+        strcpy(temp, item_name + size_of_pre_path + 1);
+        // char *temp = item_name + size_of_pre_path + 1;
+        strcat(new_path, temp);
+        // printf("----------------------------------------------\n");
+        // printf("file : %s\n", new_path);
+        // printf("%s is current file\n", getcwd(NULL, 0));
+        t++;
+
+        int a;
+        recv(client_socket, &a, sizeof(a), 0);
+        printf("a: %d\n", a);
+        a = 1;
+        send(client_socket, &a, sizeof(a), 0);
+        usleep(1000);
+
+        FILE *file = fopen(new_path, "wb");
+        if (file == NULL)
+            error("ERROR opening file");
+
+        char buffer[BUFFER_SIZE];
+        int bytesReceived = 0;
+        while ((bytesReceived = recv(client_socket, &buffer, sizeof(buffer), 0)) > 0)
+        {
+            if (buffer[0] == '\0')
+                continue;
+            buffer[bytesReceived] = '\0';
+            // usleep(1000);
+            // printf("buffer: %s\n", buffer);
+            printf("%d %ld\n", bytesReceived, sizeof(buffer));
+            char *if_stop = buffer + strlen(buffer) - 4;
+            if (strcmp(if_stop, "STOP") == 0)
+            {
+                if (strlen(buffer) == 4)
+                {
+                    break;
+                }
+                buffer[bytesReceived - 4] = '\0';
+                char *tmp_buffer = (char *)malloc(sizeof(char) * 1024);
+                strcpy(tmp_buffer, buffer);
+                tmp_buffer[bytesReceived - 4] = '\0';
+                fwrite(tmp_buffer, 1, sizeof(tmp_buffer), file);
+                break;
+            }
+            fwrite(buffer, 1, bytesReceived, file);
+            bzero(buffer, BUFFER_SIZE);
+            // memset(buffer, '\0', sizeof(buffer));
+            usleep(1000);
+        }
+
+        fclose(file);
+
+        send(client_socket, &(int){1}, sizeof(int), 0);
+        // printf("----------------------------------------------\n");
+        usleep(1000);
+    }
+    // printf("t: %d\n", t);
+}
+
+void recv_folder_contents(char *path)
+{
+    int client_socket;
+    struct sockaddr_in server_addr;
+
+    // Create socket
+    client_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (client_socket < 0)
+        error("ERROR opening socket");
+
+    // Initialize server address struct
+    bzero((char *)&server_addr, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(port_for_storage_communication);
+    server_addr.sin_addr.s_addr = inet_addr("127.0.0.1"); // replace with your server IP
+
+    // Connect to the server
+    if (connect(client_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
+        error("ERROR connecting");
+
+    mkdir(path, 0777);
+    chdir(path);
+    char pre_path[MAX_PATH_LENGTH];
+    recv(client_socket, &pre_path, sizeof(pre_path), 0);
+
+    int size_of_pre_path = strlen(pre_path);
+
+    // printf("pre_path: %s\n", pre_path);
+
+    receive_folder_handler(client_socket, path);
+    receive_files_from_folder_handler(client_socket, path, size_of_pre_path);
+
+    // recv(client_socket, &(int){1}, sizeof(int), 0);
+
+    printf("Folder received successfully.\n");
+}
+
 void send_contents(char *path, int client_socket)
 {
     // send(port_for_nm, "Sending", strlen("Sending"), 0);
@@ -86,6 +260,160 @@ void send_contents(char *path, int client_socket)
 
     // Cleanup and close socket
     fclose(file);
+}
+
+void send_file_handler(const char *file_path, int client_socket)
+{
+    int a = 1;
+    send(client_socket, &a, sizeof(a), 0);
+    usleep(1000);
+    recv(client_socket, &a, sizeof(a), 0);
+    // printf("a: %d\n", a);
+    FILE *file = fopen(file_path, "rb");
+    if (file == NULL)
+        error("ERROR opening file");
+
+    char buffer[BUFFER_SIZE];
+    size_t bytesRead;
+
+    while ((bytesRead = fread(buffer, 1, BUFFER_SIZE, file)) > 0)
+    {
+        // printf("%s", buffer);
+        buffer[bytesRead] = '\0';
+        send(client_socket, buffer, bytesRead, 0);
+        usleep(100);
+    }
+
+    strcpy(buffer, "STOP");
+    send(client_socket, buffer, strlen(buffer), 0);
+    usleep(1000);
+    // send(client_socket, "-1", sizeof("-1"), 0);
+    // usleep(1000);
+    fclose(file);
+    recv(client_socket, &a, sizeof(a), 0);
+    // printf("a: %d\n", a);
+}
+
+void send_folder_handler(const char *folder_path, int client_socket)
+{
+    DIR *dir;
+    struct dirent *entry;
+
+    dir = opendir(folder_path);
+    if (dir == NULL)
+        error("ERROR opening directory");
+
+    while ((entry = readdir(dir)) != NULL)
+    {
+        char item_name[MAX_PATH_LENGTH];
+        char file_name[MAX_PATH_LENGTH];
+        strcpy(file_name, entry->d_name);
+        file_name[strlen(file_name)] = '\0';
+        snprintf(item_name, sizeof(item_name), "%s/%s", folder_path, entry->d_name);
+
+        struct stat st;
+        if (stat(item_name, &st) == -1)
+        {
+            error("ERROR getting file status");
+        }
+
+        if (S_ISDIR(st.st_mode) && strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0)
+        {
+            // printf("Sending folder %s\n", item_name);
+            send(client_socket, &(int){1}, sizeof(int), 0);
+            usleep(1000);
+            // recv(client_socket, &(int){1}, sizeof(int), 0);
+            // printf("folder name: %s\n", entry->d_name);
+            send(client_socket, &entry->d_name, sizeof(entry->d_name), 0);
+            usleep(1000);
+            // char time_adjust[MAX_PATH_LENGTH];
+            // recv(client_socket, &time_adjust, sizeof(time_adjust), 0);
+            send_folder_handler(item_name, client_socket);
+        }
+    }
+
+    send(client_socket, &(int){-1}, sizeof(int), 0);
+    closedir(dir);
+}
+
+void send_files_from_folder_handler(const char *folder_path, int client_socket)
+{
+    DIR *dir;
+    struct dirent *entry;
+
+    dir = opendir(folder_path);
+    if (dir == NULL)
+        error("ERROR opening directory");
+
+    while ((entry = readdir(dir)) != NULL)
+    {
+        char item_name[MAX_PATH_LENGTH];
+        snprintf(item_name, sizeof(item_name), "%s/%s", folder_path, entry->d_name);
+
+        struct stat st;
+        if (stat(item_name, &st) == -1)
+        {
+            error("ERROR getting file status");
+        }
+
+        if (S_ISREG(st.st_mode))
+        {
+            // printf("Sending file %s\n", item_name);
+            send(client_socket, &item_name, sizeof(item_name), 0);
+            usleep(1000);
+            send_file_handler(item_name, client_socket);
+        }
+
+        if (S_ISDIR(st.st_mode) && strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0)
+        {
+            // printf("Sending folder %s\n", item_name);
+            send_files_from_folder_handler(item_name, client_socket);
+        }
+    }
+    closedir(dir);
+}
+
+void send_folder_contents(char *path)
+{
+    int server_socket, client_socket;
+    printf("path to copy from : %s\n", path);
+    struct sockaddr_in server_addr, client_addr;
+    socklen_t client_len = sizeof(client_addr);
+    // Create socket
+    server_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_socket < 0)
+        error("ERROR opening socket");
+    // Initialize server address struct
+    bzero((char *)&server_addr, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = INADDR_ANY;
+    server_addr.sin_port = htons(port_for_storage_communication);
+
+    // Bind the socket to a specific address and port
+    if (bind(server_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
+        error("ERROR on binding");
+
+    // Listen for incoming connections
+    listen(server_socket, 1);
+    // printf("Server listening on port %d\n", port_for_storage_communication);
+
+    // Accept a connection
+    client_socket = accept(server_socket, (struct sockaddr *)&client_addr, &client_len);
+    if (client_socket < 0)
+        error("ERROR on accept");
+
+    send(client_socket, path, sizeof(path), 0);
+    usleep(1000);
+    send_folder_handler(path, client_socket);
+    send_files_from_folder_handler(path, client_socket);
+    // printf("sent success\n");
+    send(client_socket, "-1", sizeof("-1"), 0);
+
+    printf("Folder sent successfully.\n");
+
+    // Cleanup and close socket
+    close(client_socket);
+    close(server_socket);
 }
 
 void send_file_contents(const char *filename, int socket)
@@ -174,6 +502,29 @@ void handle_command(char *function, char *path, int client_socket)
     {
         printf("paste_to_you\n");
         recv_file_contents(path, client_socket);
+    }
+    else if (strcmp(function, "copy_folder_from_you") == 0)
+    {
+        char buffer[1024];
+        int n2 = recv(client_socket, buffer, sizeof(buffer), 0);
+        usleep(100);
+        buffer[n2] = '\0';
+        printf("Received: %s\n", buffer);
+        port_for_storage_communication = atoi(buffer);
+        printf("copy_folder_from_you\n");
+        path[strlen(path) - 1] = '\0';
+        send_folder_contents(path);
+    }
+    else if (strcmp(function, "paste_folder_to_you") == 0)
+    {
+        char buffer[1024];
+        int n2 = recv(client_socket, buffer, sizeof(buffer), 0);
+        usleep(100);
+        buffer[n2] = '\0';
+        printf("Received: %s\n", buffer);
+        port_for_storage_communication = atoi(buffer);
+        printf("paste_folder_to_you\n");
+        recv_folder_contents(path);
     }
     else
     {
@@ -288,7 +639,7 @@ void read_or_write(char *path, char *type, int client_socket)
             send(client_socket, line_buffer, strlen(line_buffer), 0);
             usleep(100);
         }
-        printf("a");
+        // printf("a");
         // usleep(100);
         fclose(file);
         // usleep(1000);
@@ -536,19 +887,22 @@ void *intial_connection(void *argp)
     while (1)
     {
         char command[1024];
-        scanf("%s", command);
+        scanf("%s", command);       
         printf("command: %s\n", command);
-        if (strcmp(command, "close_storage") == 0)
-        {
-            send(sock, command, strlen(command), 0);
-            printf("Closing storage\n");
-            exit(0);
-            break;
-        }
-        else
-        {
-            printf("Invalid command\n");
-        }
+        command[strlen(command)] = '\0';
+        printf("Sending: %s\n", command);       
+        send(sock, command, strlen(command), 0);
+        int n = recv(sock, buffer, sizeof(buffer), 0);
+        buffer[n] = '\0';
+        printf("Received: %s\n", buffer);
+        printf("Closing storage\n");
+        exit(0);
+        break;
+        // }
+        // else
+        // {
+        //     printf("Invalid command\n");
+        // }
     }
     close(sock);
     return NULL;
@@ -564,7 +918,6 @@ int main()
 
     pthread_t listen_client_thread_id;
     pthread_create(&listen_client_thread_id, NULL, listen_client, NULL);
-
 
     pthread_join(listen_nm_thread_id, NULL);
     pthread_join(listen_client_thread_id, NULL);
