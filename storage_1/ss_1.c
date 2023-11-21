@@ -190,6 +190,25 @@ void receive_files_from_folder_handler(int client_socket, const char *folder_pat
     }
     // printf("t: %d\n", t);
 }
+void self_copy_file_or_folder(const char *sourcePath, const char *destinationPath)
+{
+    // Create the copy command
+    char copyCommand[256];
+    snprintf(copyCommand, sizeof(copyCommand), "cp -r %s %s", sourcePath, destinationPath);
+
+    // Execute the copy command
+    int copyResult = system(copyCommand);
+
+    if (copyResult == 0)
+    {
+        printf("Successfully copied %s to %s\n", sourcePath, destinationPath);
+    }
+    else
+    {
+        fprintf(stderr, "Error copying %s to %s\n", sourcePath, destinationPath);
+        exit(EXIT_FAILURE);
+    }
+}
 
 void recv_folder_contents(char *path)
 {
@@ -525,6 +544,19 @@ void handle_command(char *function, char *path, int client_socket)
         port_for_storage_communication = atoi(buffer);
         printf("paste_folder_to_you\n");
         recv_folder_contents(path);
+    }
+    else if (strcmp(function, "copy_self") == 0)
+    {
+        printf("copy_self\n");
+        char *token = strtok(path, " ");
+        char *src_path = (char *)malloc(sizeof(char) * 1024);
+        char *dest_path = (char *)malloc(sizeof(char) * 1024);
+        strcpy(src_path, token);
+        token = strtok(NULL, " ");
+        strcpy(dest_path, token);
+        printf("src_path: %s\n", src_path);
+        printf("dest_path: %s\n", dest_path);
+        self_copy_file_or_folder(src_path, dest_path);
     }
     else
     {

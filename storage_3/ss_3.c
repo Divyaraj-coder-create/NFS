@@ -12,8 +12,8 @@
 #include <sys/stat.h>
 #include <limits.h>
 
-int port_for_nm = 10205;
-int port_for_client = 1235;
+int port_for_nm = 10204;
+int port_for_client = 1234;
 
 #define BUFFER_SIZE 100
 #define MAX_PATH_LENGTH 1000
@@ -29,7 +29,7 @@ void error(const char *msg)
 
 void recv_file_contents(char *path, int client_socket)
 {
-    // printf("path to paste to : %s\n", path);
+    printf("path to paste to : %s\n", path);
     FILE *file = fopen(path, "wb"); // replace with the path of the file you want to send
     if (file == NULL)
         perror("ERROR opening file");
@@ -137,8 +137,8 @@ void receive_files_from_folder_handler(int client_socket, const char *folder_pat
         // char *temp = item_name + size_of_pre_path + 1;
         strcat(new_path, temp);
         // printf("----------------------------------------------\n");
-        // printf("file : %s\n", new_path);
-        // printf("%s is current file\n", getcwd(NULL, 0));
+        printf("file : %s\n", new_path);
+        printf("%s is current file\n", getcwd(NULL, 0));
         t++;
 
         int a;
@@ -190,6 +190,25 @@ void receive_files_from_folder_handler(int client_socket, const char *folder_pat
     }
     // printf("t: %d\n", t);
 }
+void self_copy_file_or_folder(const char *sourcePath, const char *destinationPath)
+{
+    // Create the copy command
+    char copyCommand[256];
+    snprintf(copyCommand, sizeof(copyCommand), "cp -r %s %s", sourcePath, destinationPath);
+
+    // Execute the copy command
+    int copyResult = system(copyCommand);
+
+    if (copyResult == 0)
+    {
+        printf("Successfully copied %s to %s\n", sourcePath, destinationPath);
+    }
+    else
+    {
+        fprintf(stderr, "Error copying %s to %s\n", sourcePath, destinationPath);
+        exit(EXIT_FAILURE);
+    }
+}
 
 void recv_folder_contents(char *path)
 {
@@ -218,7 +237,7 @@ void recv_folder_contents(char *path)
 
     int size_of_pre_path = strlen(pre_path);
 
-    // printf("pre_path: %s\n", pre_path);
+    printf("pre_path: %s\n", pre_path);
 
     receive_folder_handler(client_socket, path);
     receive_files_from_folder_handler(client_socket, path, size_of_pre_path);
@@ -526,6 +545,19 @@ void handle_command(char *function, char *path, int client_socket)
         printf("paste_folder_to_you\n");
         recv_folder_contents(path);
     }
+    else if (strcmp(function, "copy_self") == 0)
+    {
+        printf("copy_self\n");
+        char *token = strtok(path, " ");
+        char *src_path = (char *)malloc(sizeof(char) * 1024);
+        char *dest_path = (char *)malloc(sizeof(char) * 1024);
+        strcpy(src_path, token);
+        token = strtok(NULL, " ");
+        strcpy(dest_path, token);
+        printf("src_path: %s\n", src_path);
+        printf("dest_path: %s\n", dest_path);
+        self_copy_file_or_folder(src_path, dest_path);
+    }
     else
     {
         printf("Invalid command\n");
@@ -636,6 +668,22 @@ void read_or_write(char *path, char *type, int client_socket)
         {
             printf("Sending: %s", line_buffer);
             line_buffer[strlen(line_buffer)] = '\0';
+            char *if_stop = line_buffer + strlen(line_buffer) - 4;
+            if (strcmp(if_stop, "STOP") == 0)
+            {
+                line_buffer[strlen(line_buffer) - 4] = '\0';
+                char *tmp_buffer = (char *)malloc(sizeof(char) * 1024);
+                strcpy(tmp_buffer, line_buffer);
+                printf("Line recieved from NM: %s\n", tmp_buffer);
+                send(client_socket, tmp_buffer, strlen(tmp_buffer), 0);
+                usleep(100);
+                if(strlen(line_buffer) == 4)
+                {
+                    send(client_socket, "STOP", strlen("STOP"), 0);
+                    break;
+                }
+                break;
+            }
             send(client_socket, line_buffer, strlen(line_buffer), 0);
             usleep(100);
         }

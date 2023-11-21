@@ -470,6 +470,7 @@ void handle_storage_connection(int client_socket)
         printf("Replication started\n");
         // printf("Sending %s\n", path_storage);
         replicant_function(path_storage, count_path, temp, temp->replicate1);
+        replicant_function(path_storage, count_path, temp, temp->replicate2);
     }
     while (1)
     {
@@ -484,6 +485,7 @@ void handle_storage_connection(int client_socket)
     if (temp->storage_id > 2)
     {
         replicant_function(path_storage, count_path, temp, temp->replicate1);
+        replicant_function(path_storage, count_path, temp, temp->replicate2);
     }
     send(client_socket, "CLOSE", strlen("CLOSE"), 0);
     while (count_path--)
@@ -733,6 +735,49 @@ void copy_parallely(char *src_ip, char *dest_ip, int src_port, int dest_port, ch
         send(sock1, buffer, strlen(buffer), 0);
     }
     close(sock);
+}
+
+void copy_to_same(char *src_ip, char *dest_ip, int src_port, int dest_port, char *src_path, char *dest_path, int src_server_number, int src_port_for_nm, int dest_port_for_nm)
+{
+    int sock;
+    struct sockaddr_in addr;
+    socklen_t addr_size;
+    char buffer[1024];
+    int n;
+    sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0)
+    {
+        perror("[-]Socket error");
+        exit(1);
+    }
+    memset(&addr, '\0', sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = (src_port);
+    addr.sin_addr.s_addr = inet_addr(src_ip);
+    connect(sock, (struct sockaddr *)&addr, sizeof(addr));
+    printf("[+] Connected to the server %d for Copying.\n", src_server_number + 1);
+    while (1)
+    {
+        int n1 = recv(sock, buffer, sizeof(buffer), 0);
+        if (n1 == 0)
+        {
+            continue;
+        }
+        buffer[n1] = '\0';
+        if (strcmp(buffer, "Accepted") == 0)
+        {
+            break;
+        }
+    }
+    // printf("Connected to server\n");
+    send(sock, "copy_self", strlen("copy_self"), 0);
+    usleep(1000);
+    char *sending_command = (char *)malloc(sizeof(char) * 1024);
+    strcpy(sending_command, src_path);
+    strcat(sending_command, " ");
+    strcat(sending_command, dest_path);
+    sending_command[strlen(sending_command)] = '\0';
+    send(sock, sending_command, strlen(sending_command), 0);
 }
 
 void copy_folder_parallely(char *src_ip, char *dest_ip, int src_port, int dest_port, char *src_path, char *dest_path, int src_server_number, int src_port_for_nm, int dest_port_for_nm)
@@ -1176,15 +1221,30 @@ void execute_client_request(char *command, char *search_path, int sock)
             int dest_server_number = node->storage_node->storage_id;
             int dest_port_for_nm = node->storage_node->storage_port_for_NM;
             dest_ip[strlen(dest_ip)] = '\0';
+
+
             // pthread_mutex_unlock(&lock1);
-            if (src_path[strlen(src_path) - 1] == '/')
+            if (strcmp(src_ip, dest_ip) == 0)
             {
-                copy_folder_parallely(src_ip, dest_ip, src_port, dest_port, src_path, dest_path, src_server_number, src_port_for_nm, dest_port_for_nm);
+                printf("Source and destination are same\n");
+                if (src_path[strlen(src_path) - 1] == '/')
+                {
+                    src_path[strlen(src_path) - 1] = '\0';
+                }
+                copy_to_same(src_ip, dest_ip, src_port, dest_port, src_path, dest_path, src_server_number, src_port_for_nm, dest_port_for_nm);
             }
+            // pthread_mutex_unlock(&lock1);
             else
             {
+                if (src_path[strlen(src_path) - 1] == '/')
+                {
+                    copy_folder_parallely(src_ip, dest_ip, src_port, dest_port, src_path, dest_path, src_server_number, src_port_for_nm, dest_port_for_nm);
+                }
+                else
+                {
 
-                copy_parallely(src_ip, dest_ip, src_port, dest_port, src_path, dest_path, src_server_number, src_port_for_nm, dest_port_for_nm);
+                    copy_parallely(src_ip, dest_ip, src_port, dest_port, src_path, dest_path, src_server_number, src_port_for_nm, dest_port_for_nm);
+                }
             }
             // send(sock, "STOP", strlen("STOP"), 0);
         }

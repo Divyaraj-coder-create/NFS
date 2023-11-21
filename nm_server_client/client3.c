@@ -305,6 +305,9 @@ int main()
             token = strtok(NULL, " ");
             strcpy(path, token);
             send(sock, path, strlen(path), 0);
+            usleep(1000);
+            send(sock, function, strlen(function), 0);
+            usleep(1000);
             memset(buffer, '\0', sizeof(buffer));
             char response[1024];
             int flag = 0;
