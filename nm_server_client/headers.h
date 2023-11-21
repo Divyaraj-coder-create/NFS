@@ -9,6 +9,8 @@
 #include <stdbool.h>
 #define MAX_STORAGE_SERVERS 20
 
+
+extern int* server_is_present;
 extern int num_of_storage_servers;
 struct storage_node
 {

@@ -4,7 +4,6 @@
 1
 neel_amrutia
 neel.txt
-nn.txt
 ./neel/
 dhdhd.txt
 random_file.txt

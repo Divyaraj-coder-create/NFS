@@ -29,7 +29,7 @@ void error(const char *msg)
 
 void recv_file_contents(char *path, int client_socket)
 {
-    // printf("path to paste to : %s\n", path);
+    printf("path to paste to : %s\n", path);
     FILE *file = fopen(path, "wb"); // replace with the path of the file you want to send
     if (file == NULL)
         perror("ERROR opening file");
@@ -218,7 +218,7 @@ void recv_folder_contents(char *path)
 
     int size_of_pre_path = strlen(pre_path);
 
-    // printf("pre_path: %s\n", pre_path);
+    printf("pre_path: %s\n", pre_path);
 
     receive_folder_handler(client_socket, path);
     receive_files_from_folder_handler(client_socket, path, size_of_pre_path);
@@ -898,11 +898,6 @@ void *intial_connection(void *argp)
         printf("Closing storage\n");
         exit(0);
         break;
-        // }
-        // else
-        // {
-        //     printf("Invalid command\n");
-        // }
     }
     close(sock);
     return NULL;

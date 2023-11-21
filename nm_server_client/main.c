@@ -1,18 +1,13 @@
 // #include "headers.h"
 #include "main.h"
 
+int *server_is_present = NULL;
 int num_of_storage_servers = 5;
 struct TrieNode *root;
 struct storage_node *storage_server = NULL;
 
 struct storage_node *st_array[1000];
-// void **handle_storage_connection_thread(void *arg)
-// {
-//     int client_socket = *((int *)arg);
-//     handle_storage_connection(client_socket);
-//     close(client_socket);
-//     return NULL;
-// }
+
 
 #define LRULIMIT 5
 #define ARRAYSIZE 100007
@@ -134,6 +129,7 @@ void delete_cache(char *path)
             if (node->next->index == index)
             {
                 printf("Deleted %d\n", index);
+                printf("%s\n", path);
                 struct ll *tmp = node->next;
                 struct ll *temp1 = node->next->next;
                 node->next = temp1;
@@ -366,15 +362,24 @@ void replicant_function(char **path_storage, int count_path, struct storage_node
         char *dest_path = (char *)malloc(sizeof(char) * 1024);
         strcpy(dest_path, "./");
         strcat(dest_path, folder_path_str);
-        // printf("src_path : %s\n", src_path);
+        printf("------ src_path : %s\n", src_path);
         if (src_path[strlen(src_path) - 1] == '/')
         {
-            // give_command_to_nm(dest_ip, dest_port, "CREATE", dest_path);
             copy_folder_parallely(src_ip, dest_ip, src_port, dest_port, src_path, dest_path, folder_id, temp->storage_port_for_NM, temp_copy->storage_port_for_NM);
         }
         else
         {
-            printf("src_path : %s\n", src_path);
+            strcat(dest_path, src_path + 2);
+            // src_path = src_path + 2;
+            for (int j = strlen(dest_path); j >= 0; j--)
+            {
+                if (dest_path[j] == '/')
+                {
+                    dest_path[j + 1] = '\0';
+                    break;
+                }
+            }
+            printf("------ dest_path ----- : %s\n", dest_path);
             copy_parallely(src_ip, dest_ip, src_port, dest_port, src_path, dest_path, folder_id, temp->storage_port_for_NM, temp_copy->storage_port_for_NM);
         }
     }
@@ -433,6 +438,7 @@ void handle_storage_connection(int client_socket)
         if (i == 3)
         {
             temp->storage_id = atoi(buffer);
+            server_is_present[temp->storage_id] = 1;
             i++;
             continue;
         }
@@ -462,6 +468,7 @@ void handle_storage_connection(int client_socket)
     if (temp->storage_id > 2)
     {
         printf("Replication started\n");
+        // printf("Sending %s\n", path_storage);
         replicant_function(path_storage, count_path, temp, temp->replicate1);
     }
     while (1)
@@ -484,6 +491,7 @@ void handle_storage_connection(int client_socket)
         path_storage[count_path][strlen(path_storage[count_path])] = '\0';
         delete (path_storage[count_path]);
         delete_cache(path_storage[count_path]);
+        server_is_present[temp->storage_id] = 0;
     }
     if (bytes_received == 0)
     {
@@ -676,7 +684,6 @@ void copy_parallely(char *src_ip, char *dest_ip, int src_port, int dest_port, ch
             break;
         }
     }
-
     send(sock1, "paste_to_you", strlen("paste_to_you"), 0);
     usleep(1000);
     char *copy_file = (char *)malloc(sizeof(char) * 1024);
@@ -804,7 +811,6 @@ void copy_folder_parallely(char *src_ip, char *dest_ip, int src_port, int dest_p
             break;
         }
     }
-
     send(sock1, "paste_folder_to_you", strlen("paste_folder_to_you"), 0);
     usleep(1000);
     char *copy_file = (char *)malloc(sizeof(char) * 1024);
@@ -824,6 +830,7 @@ void copy_folder_parallely(char *src_ip, char *dest_ip, int src_port, int dest_p
     }
     // strcat(dest_path, "/");
     strcat(dest_path, copy_file);
+    printf("-----dest_path : %s\n", dest_path);
     send(sock1, dest_path, strlen(dest_path), 0);
     // usleep(1000);
     // printf("Will start to recieve from here\n");
@@ -870,6 +877,16 @@ void execute_client_request(char *command, char *search_path, int sock)
     printf("%s\n", search_path);
     if (a == 1)
     {
+        usleep(1000);
+        char function_exec[1024];
+        int n1 = recv(sock, function_exec, sizeof(function_exec), 0);
+        function_exec[n1] = '\0';
+        printf("recv function -- %s\n", function_exec);
+        int a = 0;
+        if (strcmp(function_exec, "WRITE") == 0)
+        {
+            a = 1;
+        }
         struct storage_node *srch_cache = search_cache(search_path);
         if (srch_cache != NULL)
         {
@@ -900,7 +917,7 @@ void execute_client_request(char *command, char *search_path, int sock)
 
                 if (node->isEndOfPath == 0)
                 {
-                    if (node->storage_node->replicate1 != NULL)
+                    if (node->storage_node->replicate1 != NULL && a == 0)
                     {
                         send(sock, "Found", strlen("Found"), 0);
                         printf("Found\n");
@@ -923,9 +940,9 @@ void execute_client_request(char *command, char *search_path, int sock)
                         strcat(path_ss, path_ss_id);
                         send(sock, path_ss, strlen(path_ss), 0);
                         usleep(1000);
-                        insert_cache(search_path, node->storage_node);
+                        // insert_cache(search_path, node->storage_node);
                     }
-                    else if (node->storage_node->replicate2 != NULL)
+                    else if (node->storage_node->replicate2 != NULL && a == 0)
                     {
                         send(sock, "Found", strlen("Found"), 0);
                         printf("Found\n");
@@ -948,11 +965,13 @@ void execute_client_request(char *command, char *search_path, int sock)
                         strcat(path_ss, path_ss_id);
                         send(sock, path_ss, strlen(path_ss), 0);
                         usleep(1000);
-                        insert_cache(search_path, node->storage_node);
+                        // insert_cache(search_path, node->storage_node);
                     }
                     else
                     {
-                        printf("Cannot be read\n");
+                        send(sock, "STOP", strlen("STOP"), 0);
+                        usleep(1000);
+                        printf("No permission to write\n");
                     }
                 }
                 else
@@ -1046,39 +1065,73 @@ void execute_client_request(char *command, char *search_path, int sock)
         {
             printf("CREATE\n");
             printf("----%s----\n", search_path);
-            struct storage_node *srch_cache = search_cache(search_path);
-            printf("aaa\n");
+            char pp[1024];
+            if (search_path[strlen(search_path) - 1] != '/')
+            {
+                strcpy(pp, search_path);
+                for (int kk = strlen(pp); kk >= 0; kk--)
+                {
+                    if (pp[kk] == '/')
+                    {
+                        pp[kk + 1] = '\0';
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                int fff = 0;
+                strcpy(pp, search_path);
+                for (int kk = strlen(pp); kk >= 0; kk--)
+                {
+                    if (pp[kk] == '/')
+                    {
+                        if (fff == 0)
+                        {
+                            fff = 1;
+                            continue;
+                        }
+                        pp[kk + 1] = '\0';
+                        break;
+                    }
+                }
+            }
+            printf("----%s----\n", pp);
+            struct storage_node *srch_cache = search_cache(pp);
+            // printf("aaa\n");
             if (srch_cache != NULL)
             {
                 // insert_cache(search_path,srch_cache);
-                printf("Path already exists\n");
-                send(sock, "Path already exists", strlen("Path already exists"), 0);
+                insert_path(search_path, srch_cache);
+                send(sock, "Path created", strlen("Path created"), 0);
+                usleep(1000);
+                give_command_to_nm(srch_cache->storage_ip, srch_cache->storage_port_for_NM, function_exec, search_path);
                 usleep(1000);
             }
             else
             {
-                struct TrieNode *node = search(search_path, 0);
+                struct TrieNode *node = search(pp, 0);
                 if (node && node->isEndOfPath != 0)
                 {
                     // insert_cache(search_path, node->storage_node);
                     // send path already exists
-                    send(sock, "Path already exists", strlen("Path already exists"), 0);
-                    usleep(1000);
-                }
-                else
-                {
-                    // pthread_mutex_unlock(&lock1);
                     struct storage_node *temp = (struct storage_node *)malloc(sizeof(struct storage_node));
-                    temp->storage_id = 0;
-                    strcpy(temp->storage_ip, "127.0.0.1");
-                    temp->storage_port_for_NM = 10202;
-                    temp->storage_port_for_client = 1232;
+                    temp->storage_id = node->storage_node->storage_id;
+                    strcpy(temp->storage_ip, node->storage_node->storage_ip);
+                    temp->storage_port_for_NM = node->storage_node->storage_port_for_NM;
+                    temp->storage_port_for_client = node->storage_node->storage_port_for_client;
                     insert_cache(search_path, temp);
                     insert_path(search_path, temp);
                     send(sock, "Path created", strlen("Path created"), 0);
                     usleep(1000);
                     // pthread_mutex_unlock(&lock1);
-                    give_command_to_nm("127.0.0.1", 10202, function_exec, search_path);
+                    give_command_to_nm(temp->storage_ip, temp->storage_port_for_NM, function_exec, search_path);
+                }
+                else
+                {
+                    // pthread_mutex_unlock(&lock1);
+                    send(sock, "Path does not already exists", strlen("Path does not already exists"), 0);
+                    usleep(1000);
                 }
             }
         }
@@ -1130,6 +1183,7 @@ void execute_client_request(char *command, char *search_path, int sock)
             }
             else
             {
+
                 copy_parallely(src_ip, dest_ip, src_port, dest_port, src_path, dest_path, src_server_number, src_port_for_nm, dest_port_for_nm);
             }
             // send(sock, "STOP", strlen("STOP"), 0);
@@ -1268,6 +1322,11 @@ void *listen_client(void *vargp)
 int main()
 {
     init_cache();
+    server_is_present = (int *)malloc(sizeof(int) * 100);
+    for (int i = 0; i < 100; i++)
+    {
+        server_is_present[i] = 0;
+    }
     head = (struct ll *)malloc(sizeof(struct ll));
     root = getNode('*');
     //  pthread_mutex_init(&lock1, NULL);
