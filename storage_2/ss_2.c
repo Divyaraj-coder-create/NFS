@@ -40,16 +40,17 @@ void recv_file_contents(char *path, int client_socket)
     while (1)
     {
         n = recv(client_socket, buffer, sizeof(buffer), 0);
-        if (n == 0)
+        if (n <= 0)
         {
             continue;
         }
         usleep(1000);
         buffer[n] = '\0';
         char *if_stop = buffer + strlen(buffer) - 4;
-        if (strcmp(if_stop, "STOP") == 0)
+        if (strstr(if_stop, "STOP") != NULL)
         {
             buffer[strlen(buffer) - 4] = '\0';
+            *if_stop='\0';
             char *tmp_buffer = (char *)malloc(sizeof(char) * 1024);
             strcpy(tmp_buffer, buffer);
             // printf("Line recieved from NM: %s\n", tmp_buffer);
@@ -125,7 +126,7 @@ void receive_files_from_folder_handler(int client_socket, const char *folder_pat
     while (1)
     {
         recv(client_socket, &item_name, sizeof(item_name), 0);
-        if (strcmp(item_name, "-1") == 0)
+        if (strstr(item_name, "-1") != NULL)
             break;
 
         char *new_path = (char *)malloc(sizeof(char) * (sizeof(item_name) + sizeof(folder_path) + 5));
@@ -163,7 +164,7 @@ void receive_files_from_folder_handler(int client_socket, const char *folder_pat
             // printf("buffer: %s\n", buffer);
             printf("%d %ld\n", bytesReceived, sizeof(buffer));
             char *if_stop = buffer + strlen(buffer) - 4;
-            if (strcmp(if_stop, "STOP") == 0)
+            if (strstr(if_stop, "STOP") != NULL)
             {
                 if (strlen(buffer) == 4)
                 {
@@ -223,12 +224,15 @@ void recv_folder_contents(char *path)
     // Initialize server address struct
     bzero((char *)&server_addr, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(port_for_storage_communication);
+    server_addr.sin_port = (port_for_storage_communication);
     server_addr.sin_addr.s_addr = inet_addr("127.0.0.1"); // replace with your server IP
 
     // Connect to the server
-    if (connect(client_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
-        error("ERROR connecting");
+    while(connect(client_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
+        {
+            continue;
+            // error("ERROR connecting");
+        }
 
     mkdir(path, 0777);
     chdir(path);
@@ -399,27 +403,29 @@ void send_folder_contents(char *path)
     struct sockaddr_in server_addr, client_addr;
     socklen_t client_len = sizeof(client_addr);
     // Create socket
-    server_socket = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_socket < 0)
-        error("ERROR opening socket");
+    while(socket(AF_INET, SOCK_STREAM, 0)<0)
+    continue;
+    // if (server_socket < 0)
+    //     error("ERROR opening socket");
     // Initialize server address struct
     bzero((char *)&server_addr, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = INADDR_ANY;
-    server_addr.sin_port = htons(port_for_storage_communication);
+    server_addr.sin_port = (port_for_storage_communication);
 
     // Bind the socket to a specific address and port
-    if (bind(server_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
-        error("ERROR on binding");
+    while(bind(server_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
+        continue;
 
     // Listen for incoming connections
     listen(server_socket, 1);
     // printf("Server listening on port %d\n", port_for_storage_communication);
 
     // Accept a connection
-    client_socket = accept(server_socket, (struct sockaddr *)&client_addr, &client_len);
-    if (client_socket < 0)
-        error("ERROR on accept");
+    while(accept(server_socket, (struct sockaddr *)&client_addr, &client_len)<0)
+    continue;
+    // if (client_socket < 0)
+    //     error("ERROR on accept");
 
     send(client_socket, path, sizeof(path), 0);
     usleep(1000);
@@ -438,6 +444,7 @@ void send_folder_contents(char *path)
 void send_file_contents(const char *filename, int socket)
 {
     FILE *file = fopen(filename, "r");
+    // printf("%p\n",file);
     if (file == NULL)
     {
         perror("Error opening file");
@@ -448,7 +455,7 @@ void send_file_contents(const char *filename, int socket)
     // Read file line by line and send each line to the server
     while (fgets(line_buffer, sizeof(line_buffer), file) != NULL)
     {
-        //  printf("Sending: %s", line_buffer);
+        printf("Sending: %s", line_buffer);
         if (kk == 0)
         {
             ip_for_client = line_buffer;
@@ -472,6 +479,7 @@ void send_file_contents(const char *filename, int socket)
         usleep(100);
     }
     // Close the file
+    printf("hi\n");
     fclose(file);
 }
 
@@ -572,16 +580,19 @@ void handle_nm_connection(int client_socket)
     // Receive data from client
     strcpy(buffer, "Accepted");
     buffer[strlen(buffer)] = '\0';
+
     send(client_socket, buffer, strlen(buffer), 0);
+    printf("nig\n");
     int n = recv(client_socket, buffer, sizeof(buffer), 0);
+    printf("nigga\n");
     usleep(100);
     buffer[n] = '\0';
     strcpy(copy_buffer, buffer);
-    printf("Received: %s\n", buffer);
+    printf("Receiv: %s\n", buffer);
     int n1 = recv(client_socket, buffer, sizeof(buffer), 0);
     usleep(100);
     buffer[n1] = '\0';
-    printf("Received: %s\n", buffer);
+    printf("Receiv: %s\n", buffer);
     handle_command(copy_buffer, buffer, client_socket);
     printf("------- nm_server disconnected -------\n");
     close(client_socket);
@@ -590,8 +601,9 @@ void handle_nm_connection(int client_socket)
 void *handle_nm_connection_thread(void *arg)
 {
     int client_socket = *((int *)arg);
+    printf("ihihi\n");
     handle_nm_connection(client_socket);
-    close(client_socket);
+    // close(client_socket);
     return NULL;
 }
 
@@ -630,6 +642,7 @@ void *listen_nm(void *vargp)
     while (1)
     {
         // Accept a connection
+        printf("pqrst\n");
         if ((client_socket = accept(server_sock, (struct sockaddr *)&client_addr, &client_addr_len)) == -1)
         {
             perror("Error accepting connection");
@@ -663,40 +676,21 @@ void read_or_write(char *path, char *type, int client_socket)
             exit(EXIT_FAILURE);
         }
         char line_buffer[BUFFER_SIZE];
-        // Read file line by line and send each line to the server
+        memset(line_buffer, '\0', sizeof(line_buffer));
+
         while (fgets(line_buffer, sizeof(line_buffer), file) != NULL)
         {
             printf("Sending: %s", line_buffer);
-            line_buffer[strlen(line_buffer)] = '\0';
-            char *if_stop = line_buffer + strlen(line_buffer) - 4;
-            if (strcmp(if_stop, "STOP") == 0)
-            {
-                line_buffer[strlen(line_buffer) - 4] = '\0';
-                char *tmp_buffer = (char *)malloc(sizeof(char) * 1024);
-                strcpy(tmp_buffer, line_buffer);
-                printf("Line recieved from NM: %s\n", tmp_buffer);
-                send(client_socket, tmp_buffer, strlen(tmp_buffer), 0);
-                usleep(100);
-                if(strlen(line_buffer) == 4)
-                {
-                    send(client_socket, "STOP", strlen("STOP"), 0);
-                    break;
-                }
-                break;
-            }
             send(client_socket, line_buffer, strlen(line_buffer), 0);
+            memset(line_buffer, '\0', sizeof(line_buffer));
             usleep(100);
         }
-        // printf("a");
-        // usleep(100);
         fclose(file);
-        // usleep(1000);
-        strcpy(line_buffer, "STOP");
-        line_buffer[strlen(line_buffer)] = '\0';
+        strcpy(line_buffer, "STOP\n");
         printf("Sending:--%s--", line_buffer);
         send(client_socket, line_buffer, strlen(line_buffer), 0);
-        // Close the file
     }
+
     else if (strcmp(type, "WRITE") == 0)
     {
         char choice[1024];
@@ -735,7 +729,7 @@ void read_or_write(char *path, char *type, int client_socket)
                 }
                 string[n1] = '\0';
                 printf("string: %s\n", string);
-                if (strcmp(string, "STOP") == 0)
+                if (strstr(string, "STOP") != NULL)
                 {
                     break;
                 }
@@ -782,7 +776,7 @@ void read_or_write(char *path, char *type, int client_socket)
                 }
                 string[n1] = '\0';
                 printf("string: %s\n", string);
-                if (strcmp(string, "STOP") == 0)
+                if (strstr(string, "STOP") != NULL)
                 {
                     break;
                 }
@@ -801,7 +795,7 @@ void read_or_write(char *path, char *type, int client_socket)
             printf("Invalid choice\n");
         }
     }
-    else if (strcmp(type, "DETAILS") == 0)
+    else if (strstr(type, "DETAILS") != NULL)
     {
         // give size of file or folder with given path
         struct stat st;
@@ -926,6 +920,7 @@ void *intial_connection(void *argp)
     addr.sin_addr.s_addr = inet_addr("127.0.0.1");
 
     connect(sock, (struct sockaddr *)&addr, sizeof(addr));
+    usleep(5000000);
     printf("[+] Connected to the server.\n");
 
     printf("Connected to server\n");
@@ -935,10 +930,10 @@ void *intial_connection(void *argp)
     while (1)
     {
         char command[1024];
-        scanf("%s", command);       
+        scanf("%s", command);
         printf("command: %s\n", command);
         command[strlen(command)] = '\0';
-        printf("Sending: %s\n", command);       
+        printf("Sending: %s\n", command);
         send(sock, command, strlen(command), 0);
         int n = recv(sock, buffer, sizeof(buffer), 0);
         buffer[n] = '\0';

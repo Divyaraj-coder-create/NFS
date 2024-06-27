@@ -12,4 +12,6 @@ nnn.txt
 ./neel/neel_amrutia
 ./neel/neel_amrutia_1.c
 ./neel/neel_amrutia_2.c
+./neel/divu/
+./neel/copied/
 DONE

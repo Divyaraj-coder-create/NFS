@@ -35,14 +35,14 @@ void connection_to_storage_server_for_read_write(char *ip, int port, char *path,
     char buffer1[1024];
     while (1)
     {
-        int n = recv(sock, buffer1, sizeof(buffer1), 0);
-        if (n == 0)
+        int n = recv(sock, buffer1, sizeof(buffer1) - 1, 0);
+        if (n <= 0)
         {
             continue;
         }
         buffer1[n] = '\0';
         printf("%s\n", buffer1);
-        if (strcmp(buffer1, "Accepted") == 0)
+        if (strstr(buffer1, "Accepted") != NULL)
         {
             break;
         }
@@ -52,29 +52,40 @@ void connection_to_storage_server_for_read_write(char *ip, int port, char *path,
     memset(buffer, '\0', sizeof(buffer));
     strcpy(buffer, function);
     send(sock, buffer, strlen(buffer), 0);
+    memset(buffer, '\0', sizeof(buffer));
     usleep(1000);
-    if (strcmp(function, "READ") == 0)
+    printf("-----------FILE CONTENTS-----------\n");
+    printf("\n--------x---------------x----------------x----\n");
+
+    if (strstr(function, "READ") != NULL)
     {
         while (1)
         {
-            int n = recv(sock, buffer, sizeof(buffer), 0);
-            if (n == 0)
+            int n = recv(sock, buffer, sizeof(buffer) - 1, 0);
+            if (n <= 0)
             {
+                usleep(100);
                 continue;
             }
-            usleep(100);
             buffer[n] = '\0';
-            if (strcmp(buffer, "STOP") == 0)
+            // Check if the received message contains "STOP"
+            char *stop_pos = strstr(buffer, "STOP");
+            if (stop_pos != NULL)
             {
+                // Print up to the start of "STOP"
+                *stop_pos = '\0';
+                printf("%s", buffer);
+                printf("\n--------x---------------x----------------x----\n");
                 printf("----DONE----\n");
                 break;
             }
-            printf("%s\n", buffer);
+            printf("%s", buffer);
             memset(buffer, '\0', sizeof(buffer));
         }
         close(sock);
     }
-    else if (strcmp(function, "WRITE") == 0)
+
+    else if (strstr(function, "WRITE") != NULL)
     {
         printf("Enter choice: 0 for write, 1 for append\n");
         char choice[10];
@@ -97,7 +108,7 @@ void connection_to_storage_server_for_read_write(char *ip, int port, char *path,
                 continue;
             }
             buffer[n] = '\0';
-            if (strcmp(buffer, "Accepted") == 0)
+            if (strstr(buffer, "Accepted") != NULL)
             {
                 printf("----DONE----\n");
                 break;
@@ -114,7 +125,7 @@ void connection_to_storage_server_for_read_write(char *ip, int port, char *path,
                 fgets(sTR, 1024, stdin);
                 sTR[strlen(sTR) - 1] = '\0';
                 send(sock, sTR, sizeof(sTR), 0);
-                if (strcmp(sTR, "STOP") == 0)
+                if (strstr(sTR, "STOP") != NULL)
                 {
                     break;
                 }
@@ -131,7 +142,7 @@ void connection_to_storage_server_for_read_write(char *ip, int port, char *path,
                 fgets(sTR, 1024, stdin);
                 sTR[strlen(sTR) - 1] = '\0';
                 send(sock, sTR, sizeof(sTR), 0);
-                if (strcmp(sTR, "STOP") == 0)
+                if (strstr(sTR, "STOP") != NULL)
                 {
                     break;
                 }
@@ -139,7 +150,7 @@ void connection_to_storage_server_for_read_write(char *ip, int port, char *path,
             close(sock);
         }
     }
-    else if (strcmp(function, "DETAILS") == 0)
+    else if (strstr(function, "DETAILS") != NULL)
     {
         char strin1[1024];
         int n1 = recv(sock, strin1, sizeof(strin1), 0);
@@ -171,7 +182,7 @@ void handle_read_write(int sock, char *path, char *function)
     {
         int n = recv(sock, buffer, sizeof(buffer), 0);
         buffer[n] = '\0';
-        printf("%s\n", buffer);
+        printf("jum barabar %s\n", buffer);
         if (c == 2)
         {
             strcpy(ip_for_stor, buffer);
@@ -184,7 +195,7 @@ void handle_read_write(int sock, char *path, char *function)
         }
         else if (c == 3)
         {
-            if (strcmp(buffer, "STOP") == 0)
+            if (strstr(buffer, "STOP") != NULL)
             {
                 printf("File not found\n");
                 return;
@@ -192,10 +203,10 @@ void handle_read_write(int sock, char *path, char *function)
         }
         else if (c == 0)
         {
-            if (strcmp(buffer, "SELF") == 0)
+            if (strstr(buffer, "SELF") != NULL)
             {
                 printf("SELF if\n");
-                connection_to_storage_server_for_read_write(clientIP,port_for_stor, path, function);
+                connection_to_storage_server_for_read_write(clientIP, port_for_stor, path, function);
             }
             else
             {
@@ -203,7 +214,7 @@ void handle_read_write(int sock, char *path, char *function)
                 char path_dup[1024];
                 strcpy(path_dup, "./");
                 strcat(path_dup, buffer);
-                //printf("path_dup : %s\n", path_dup);
+                // printf("path_dup : %s\n", path_dup);
                 strcat(path_dup, "/");
                 strcat(path_dup, path);
                 printf("path_dup : %s\n", path_dup);
@@ -213,7 +224,7 @@ void handle_read_write(int sock, char *path, char *function)
         }
         memset(buffer, '\0', sizeof(buffer));
     }
-    //connection_to_storage_server_for_read_write(ip_for_stor, port_for_stor, path, function);
+    // connection_to_storage_server_for_read_write(ip_for_stor, port_for_stor, path, function);
 }
 
 void handle_create_delete(int sock, char *path, char *function)
@@ -246,7 +257,7 @@ void handle_copy(int sock, char *path)
     int n = recv(sock, buffer, sizeof(buffer), 0);
     buffer[n] = '\0';
     // printf("%s\n", buffer);
-    if (strcmp(buffer, "Accepted") == 0)
+    if (strstr(buffer, "Accepted") != NULL)
     {
         printf("Accepted\n");
     }
